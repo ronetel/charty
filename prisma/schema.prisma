@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            Int           @id @default(autoincrement())
+  email         String        @unique
+  passwordHash  String
+  login         String
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  roles         UserRole[]
+  preferences   UserPreferences?
+  orders        Order[]
+  paymentMethods PaymentMethod[]
+
+  @@map("users")
+}
+
+model Role {
+  id   Int    @id @default(autoincrement())
+  name String @unique @db.VarChar(50)
+
+  userRoles UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  userId Int
+  roleId Int
+
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model UserPreferences {
+  userId      Int    @id
+  theme       String @default("light") @db.VarChar(20)
+  dateFormat  String @db.VarChar(20)
+  pageSize    Int    @default(10)
+  savedFilters Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("user_preferences")
+}
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(100)
+  description String?
+
+  products    ProductCategory[]
+
+  @@map("categories")
+}
+
+model Product {
+  id               Int      @id @default(autoincrement())
+  rawgId           Int?     @unique
+  rawgSlug         String?  @db.VarChar(255)
+  name             String   @db.VarChar(255)
+  description      String?
+  backgroundImage  String?
+  releasedDate     DateTime?
+  price            Decimal  @db.Decimal(10, 2)
+  digitalKey       String?
+  stockQuantity    Int      @default(1)
+  isActive         Boolean  @default(true)
+  rating           Float    @default(0)
+  added            Int      @default(0)
+  website          String?  @db.VarChar(500)
+  metacritic       Int?
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  categories       ProductCategory[]
+  orderItems       OrderItem[]
+
+  @@map("products")
+}
+
+model ProductCategory {
+  productId   Int
+  categoryId  Int
+
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+  @@map("product_categories")
+}
+
+model Order {
+  id           Int        @id @default(autoincrement())
+  userId       Int
+  totalAmount  Decimal    @db.Decimal(10, 2)
+  status       String     @default("pending") @db.VarChar(50)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items        OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          Int      @id @default(autoincrement())
+  orderId     Int
+  productId   Int
+  quantity    Int      @default(1)
+  priceAtOrder Decimal @db.Decimal(10, 2)
+
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@map("order_items")
+}
+
+model PaymentMethod {
+  id         Int    @id @default(autoincrement())
+  userId     Int
+  methodType String @db.VarChar(50)
+  maskedData String @db.VarChar(100)
+  isDefault  Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("payment_methods")
+}
+

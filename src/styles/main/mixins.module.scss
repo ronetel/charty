@@ -1,0 +1,7 @@
+@import "./variables.module.scss";
+
+@mixin display-flex($justify, $align) {
+    display: flex;
+    align-items: $align;
+    justify-content: $justify;
+}
