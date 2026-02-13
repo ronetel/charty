@@ -37,7 +37,7 @@ export const CheckoutCart: React.FC<Props> = ({
               <Text color={COLORS.gray} noOfLines={1} flex={1}>{item.name}</Text>
               <Flex align='center' gap={3}>
                 <Text color={COLORS.white} fontWeight='bold' minW='60px' textAlign='right'>
-                  ${item.price}
+                  ₽{item.price}
                 </Text>
                 <Center
                   onClick={() => onRemoveItem(item.id)}

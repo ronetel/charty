@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../../lib/prisma';
 import { isAdminFromToken, getTokenFromHeader } from '@/lib/admin';
+import { createAuditLog } from '@/lib/audit';
+import { verifyToken } from '@/lib/jwt';
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
@@ -34,7 +36,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const created = await prisma.productCategory.create({
       data: { productId, categoryId }
     });
-
+    try {
+      const payload = verifyToken(token || '');
+      await createAuditLog({ userId: payload?.id, action: 'create', entity: 'product_category', entityId: `${productId}_${categoryId}`, details: { productId, categoryId } });
+    } catch (e) {}
     return NextResponse.json(created);
   } catch (e) {
     console.error('Product category create error', e);
@@ -60,7 +65,10 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     const deleted = await prisma.productCategory.delete({
       where: { productId_categoryId: { productId, categoryId } }
     });
-
+    try {
+      const payload = verifyToken(token || '');
+      await createAuditLog({ userId: payload?.id, action: 'delete', entity: 'product_category', entityId: `${productId}_${categoryId}`, details: { productId, categoryId } });
+    } catch (e) {}
     return NextResponse.json(deleted);
   } catch (e) {
     console.error('Product category delete error', e);

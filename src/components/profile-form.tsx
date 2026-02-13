@@ -4,6 +4,7 @@ import React from 'react';
 import { User } from '../interface';
 import { COLORS } from '../theme';
 import { Box, VStack, Stack, Button, Text, Input, useToast, Flex, HStack } from '@chakra-ui/react';
+import { profileUpdateSchema } from '../lib/validations';
 
 interface Props {
   user: User;
@@ -17,17 +18,27 @@ export default function ProfileForm({ user, setUser, theme = 'dark', onThemeChan
   const [email, setEmail] = React.useState(user.email);
   const [loading, setLoading] = React.useState(false);
   const [currentTheme, setCurrentTheme] = React.useState<'light' | 'dark'>(theme);
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
   const toast = useToast();
 
   const handleSave = async () => {
-    if (!login.trim() || !email.trim()) {
-      toast({
-        title: 'Ошибка',
-        description: 'Заполните все поля',
-        status: 'error',
-        duration: 5,
-        isClosable: true,
+    setErrors({});
+
+    // Валидация данных
+    const validationResult = profileUpdateSchema.safeParse({
+      id: user.id,
+      login: login.trim(),
+      email: email.trim(),
+      name: (user as any).name,
+    });
+
+    if (!validationResult.success) {
+      const newErrors: Record<string, string> = {};
+      validationResult.error.issues.forEach(err => {
+        const path = err.path[0] as string;
+        newErrors[path] = err.message;
       });
+      setErrors(newErrors);
       return;
     }
 
@@ -36,25 +47,29 @@ export default function ProfileForm({ user, setUser, theme = 'dark', onThemeChan
 
       const res = await fetch('/api/user/profile', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: user.id, login: login.trim(), email: email.trim() }),
+        headers: { 'Content-Type': 'application/json', 'authorization': `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify({
+          id: user.id,
+          login: login.trim(),
+          email: email.trim()
+        }),
       });
 
       if (!res.ok) {
-        throw new Error('Server error');
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Server error');
       }
 
       const data = await res.json();
 
-      const updatedUser = {
-        ...user,
-        login: login.trim(),
-        email: email.trim(),
-        ...(data.user || {}),
-      };
-
-      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-      setUser(updatedUser);
+      // Обновим данные на сервере и заново запросим профиль
+      const profileRes = await fetch('/api/user/profile', {
+        headers: { 'authorization': `Bearer ${localStorage.getItem('token')}` },
+      });
+      if (profileRes.ok) {
+        const profileData = await profileRes.json();
+        setUser(profileData.user);
+      }
 
       toast({
         title: 'Успех',
@@ -67,7 +82,7 @@ export default function ProfileForm({ user, setUser, theme = 'dark', onThemeChan
       console.error('Error updating profile:', error);
       toast({
         title: 'Ошибка',
-        description: 'Ошибка при обновлении данных',
+        description: error instanceof Error ? error.message : 'Ошибка при обновлении данных',
         status: 'error',
         duration: 5,
         isClosable: true,
@@ -78,8 +93,46 @@ export default function ProfileForm({ user, setUser, theme = 'dark', onThemeChan
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('token');
     localStorage.removeItem('currentUser');
     window.location.href = '/';
+  };
+
+  // Смена пароля в профиле
+  const [newPassword, setNewPassword] = React.useState('');
+  const [currentPassword, setCurrentPassword] = React.useState('');
+  const [changingPassword, setChangingPassword] = React.useState(false);
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || currentPassword.length < 6) {
+      toast({ title: 'Ошибка', description: 'Введите текущий пароль (мин. 6 символов)', status: 'error', duration: 3000, isClosable: true });
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      toast({ title: 'Ошибка', description: 'Новый пароль должен быть минимум 6 символов', status: 'error', duration: 3000, isClosable: true });
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const res = await fetch('/api/user/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'authorization': `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Server error');
+      }
+      setNewPassword('');
+      setCurrentPassword('');
+      toast({ title: 'Успех', description: 'Пароль изменён', status: 'success', duration: 3000, isClosable: true });
+    } catch (e: any) {
+      console.error('Change password error', e);
+      toast({ title: 'Ошибка', description: e?.message || 'Не удалось изменить пароль', status: 'error', duration: 3000, isClosable: true });
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   const handleThemeToggle = async () => {
@@ -97,6 +150,7 @@ export default function ProfileForm({ user, setUser, theme = 'dark', onThemeChan
         },
         body: JSON.stringify({ theme: newTheme }),
       });
+      try { window.dispatchEvent(new CustomEvent('themeChange', { detail: { theme: newTheme } })); } catch (e) {}
     } catch (error) {
       console.error('Error saving theme preference:', error);
     }
@@ -115,9 +169,13 @@ export default function ProfileForm({ user, setUser, theme = 'dark', onThemeChan
             placeholder='Логин'
             bg={COLORS.dark}
             color={COLORS.white}
-            borderColor={COLORS.darkSoft}
+            borderColor={errors.login ? 'red.500' : COLORS.darkSoft}
+            border={errors.login ? '1px solid' : undefined}
             _focus={{ borderColor: COLORS.blue, boxShadow: `0 0 0 1px ${COLORS.blue}` }}
           />
+          {errors.login && (
+            <Text fontSize='xs' color='red.400' mt={1}>{errors.login}</Text>
+          )}
         </Box>
 
         <Box w='full'>
@@ -129,9 +187,13 @@ export default function ProfileForm({ user, setUser, theme = 'dark', onThemeChan
             placeholder='your@email.com'
             bg={COLORS.dark}
             color={COLORS.white}
-            borderColor={COLORS.darkSoft}
+            borderColor={errors.email ? 'red.500' : COLORS.darkSoft}
+            border={errors.email ? '1px solid' : undefined}
             _focus={{ borderColor: COLORS.blue, boxShadow: `0 0 0 1px ${COLORS.blue}` }}
           />
+          {errors.email && (
+            <Text fontSize='xs' color='red.400' mt={1}>{errors.email}</Text>
+          )}
         </Box>
 
         <Box w='full'>
@@ -161,6 +223,31 @@ export default function ProfileForm({ user, setUser, theme = 'dark', onThemeChan
               Изменить
             </Button>
           </Flex>
+        </Box>
+        <Box w='full'>
+          <Text fontSize='sm' color={COLORS.gray} mb={2}>Сменить пароль</Text>
+          <Input
+            type='password'
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            placeholder='Текущий пароль'
+            bg={COLORS.dark}
+            color={COLORS.white}
+            borderColor={COLORS.darkSoft}
+            _focus={{ borderColor: COLORS.blue }}
+            mb={2}
+          />
+          <Input
+            type='password'
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder='Новый пароль'
+            bg={COLORS.dark}
+            color={COLORS.white}
+            borderColor={COLORS.darkSoft}
+            _focus={{ borderColor: COLORS.blue }}
+          />
+          <Button mt={2} size='sm' bg={COLORS.blue} color={COLORS.white} isLoading={changingPassword} onClick={handleChangePassword}>Сменить пароль</Button>
         </Box>
 
         <Stack width='full' spacing={2}>

@@ -1,56 +1,90 @@
 import { NextResponse } from "next/server";
 import { getTokenFromHeader, isAdminFromToken } from "@/lib/admin";
 import productsService from "@/lib/productsService";
+import { productCreateSchema, paginationSchema } from "@/lib/validations";
+import { createAuditLog } from '@/lib/audit';
+import { verifyToken } from '@/lib/jwt';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const search = searchParams.get("search") || undefined;
-  const page = parseInt(searchParams.get("page") || "1");
-  const page_size = parseInt(searchParams.get("page_size") || "10");
+  
+  // Валидация параметров пагинации
+  const paginationData = paginationSchema.safeParse({
+    page: parseInt(searchParams.get("page") || "1"),
+    page_size: parseInt(searchParams.get("page_size") || "10"),
+    search: searchParams.get("search") || undefined,
+    sortBy: searchParams.get("sortBy") || undefined,
+    sortOrder: searchParams.get("sortOrder") || undefined,
+  });
 
-  const res = await productsService.listProducts({ page, page_size, search });
-  return NextResponse.json(res);
+  if (!paginationData.success) {
+    return NextResponse.json(
+      { error: "Ошибка валидации параметров", errors: paginationData.error.issues },
+      { status: 400 }
+    );
+  }
+
+  const { page, page_size, search, sortBy, sortOrder } = paginationData.data;
+
+  const res = await productsService.listProducts({ 
+    page, 
+    page_size, 
+    search,
+    sortBy,
+    sortOrder: sortOrder as "asc" | "desc" || "desc"
+  });
+  const total = typeof res.count === "number" ? res.count : 0;
+  const total_pages = page_size > 0 ? Math.ceil(total / page_size) : 1;
+  return NextResponse.json({
+    count: total,
+    page,
+    page_size,
+    total_pages,
+    results: res.results || [],
+  });
 }
 
 export async function POST(req: Request) {
   const token = getTokenFromHeader(req);
   if (!isAdminFromToken(token))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Неавторизовано" }, { status: 401 });
 
   try {
     const body = await req.json();
 
-    const parsedData = {
-      ...body,
+    // Валидация данных продукта
+    const validationResult = productCreateSchema.safeParse({
+      name: body.name,
+      description: body.description,
       price: body.price ? parseFloat(body.price) : undefined,
-      stockQuantity: body.stockQuantity
-        ? parseInt(body.stockQuantity, 10)
-        : undefined,
+      releasedDate: body.releasedDate,
+      rating: body.rating ? parseFloat(body.rating) : 0,
+      website: body.website,
+      background_image: body.background_image,
+    });
+
+    if (!validationResult.success) {
+      const errors = validationResult.error.issues.map(err => ({
+        path: err.path.join('.'),
+        message: err.message,
+      }));
+      return NextResponse.json(
+        { error: "Ошибка валидации", errors },
+        { status: 400 }
+      );
+    }
+
+    const parsedData = {
+      ...validationResult.data,
       categoryId: body.categoryId ? parseInt(body.categoryId, 10) : undefined,
     };
 
-    if (!parsedData.name || typeof parsedData.name !== "string") {
-      return NextResponse.json(
-        { error: "Product name is required" },
-        { status: 400 },
-      );
-    }
-
-    if (parsedData.price && isNaN(parsedData.price)) {
-      return NextResponse.json(
-        { error: "Invalid price value" },
-        { status: 400 },
-      );
-    }
-
-    if (parsedData.stockQuantity && isNaN(parsedData.stockQuantity)) {
-      return NextResponse.json(
-        { error: "Invalid stock quantity value" },
-        { status: 400 },
-      );
-    }
-
     const created = await productsService.createProduct(parsedData);
+    try {
+      const payload = verifyToken(token || '');
+      const details = { after: created };
+      await createAuditLog({ userId: payload?.id, action: 'create', entity: 'product', entityId: created.id, details });
+    } catch (e) {}
     return NextResponse.json(created, { status: 201 });
   } catch (e) {
     console.error("POST create product error:", e);
@@ -58,20 +92,20 @@ export async function POST(req: Request) {
     if (e instanceof Error) {
       if (e.message.includes("duplicate")) {
         return NextResponse.json(
-          { error: "Product with this identifier already exists" },
+          { error: "Продукт с таким идентификатором уже существует" },
           { status: 409 },
         );
       }
       if (e.message.includes("Invalid value")) {
         return NextResponse.json(
-          { error: "Invalid data types provided" },
+          { error: "Предоставлены недействительные типы данных" },
           { status: 400 },
         );
       }
     }
 
     return NextResponse.json(
-      { error: "Failed to create product" },
+      { error: "Ошибка при создании продукта" },
       { status: 500 },
     );
   }

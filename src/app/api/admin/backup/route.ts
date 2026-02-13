@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "../../../../../lib/prisma";
+import { createAuditLog } from '@/lib/audit';
+import { verifyToken } from '@/lib/jwt';
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,7 +10,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Получаем все данные из базы
     const [
       users,
       roles,
@@ -56,7 +57,6 @@ export async function POST(request: NextRequest) {
       prisma.paymentMethod.findMany(),
     ]);
 
-    // Создаем бекап
     const backupData = {
       timestamp: new Date().toISOString(),
       exportedBy: "admin",
@@ -85,10 +85,15 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    // Конвертируем в JSON
     const jsonString = JSON.stringify(backupData, null, 2);
 
-    // Создаем Blob
+    try {
+      const authHeader = request.headers.get("authorization") || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : '';
+      const payload = verifyToken(token || '');
+      await createAuditLog({ userId: payload?.id, action: 'export', entity: 'backup', details: { counts: backupData.meta.counts } });
+    } catch (e) {}
+
     return new NextResponse(jsonString, {
       headers: {
         "Content-Type": "application/json",

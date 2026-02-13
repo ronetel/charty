@@ -13,7 +13,7 @@ export const getOrderReceiptTemplate = (
         `<tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${item.name}</td>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">1</td>
-          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">$${item.price}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">₽${item.price}</td>
         </tr>`
     )
     .join('');
@@ -53,15 +53,15 @@ export const getOrderReceiptTemplate = (
         <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
           <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
             <span style="color: #64748b;">Сумма товаров:</span>
-            <span style="color: #1e293b; font-weight: bold;">$${subtotal.toFixed(2)}</span>
+            <span style="color: #1e293b; font-weight: bold;">₽${subtotal.toFixed(2)}</span>
           </div>
           <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
             <span style="color: #64748b;">Комиссия (10%):</span>
-            <span style="color: #1e293b; font-weight: bold;">$${commission.toFixed(2)}</span>
+            <span style="color: #1e293b; font-weight: bold;">₽${commission.toFixed(2)}</span>
           </div>
           <div style="display: flex; justify-content: space-between; font-size: 18px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
             <span style="color: #1e293b; font-weight: bold;">Итого:</span>
-            <span style="color: #2563eb; font-weight: bold;">$${totalAmount.toFixed(2)}</span>
+            <span style="color: #2563eb; font-weight: bold;">₽${totalAmount.toFixed(2)}</span>
           </div>
         </div>
       </div>

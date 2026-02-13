@@ -5,6 +5,7 @@ import { COLORS } from '@/theme'
 import { Box, Heading, Flex, Grid, Divider } from '@chakra-ui/react'
 import Option from '@/components/Option'
 import React, { useEffect, useState } from 'react'
+import { get } from '@/api/api'
 import { GameCardHome } from '@/interface'
 import { loadGames } from '@/utils/loadGames'
 import Loading from './loading'
@@ -25,8 +26,13 @@ export default function Category() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/categories');
-        const data = await res.json();
+        // use cached get() helper to avoid duplicate requests
+        const data = await get('categories', {} as any).catch(async () => {
+          // fallback to direct fetch if helper fails
+          const res = await fetch('/api/categories');
+          return res.json();
+        });
+
         setCategories(data.results || []);
         if (data.results && data.results.length > 0) {
           setSelectedCategoryId(data.results[0].id);

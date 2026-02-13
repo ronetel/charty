@@ -26,13 +26,14 @@ const PageContent = () => {
         const games = (await loadGames({
           page_size: 50,
           page: page,
-          // search: search as string,
-          // search_exact: false
+          search: (search || undefined) as unknown as string,
         })) as GameCardHome[];
-        setData(games);
-        console.log("🚀 ~ games:", games);
+        setData(games || []);
       } catch (error) {
         console.error("Failed to fetch games:", error);
+        setLoading(false);
+        setIsLoaded(true);
+      } finally {
         setLoading(false);
         setIsLoaded(true);
       }
@@ -51,12 +52,12 @@ const PageContent = () => {
       <Box className="wrapper" h="100%" mt="60px">
         <Box mb="50px">
           <Heading as="h1" mb="5px" fontSize="40px" fontWeight="800">
-            Search result
+            Результаты поиска
           </Heading>
 
           <Text mb="30px" fontSize="16px">
-            {`Based on your search request "${
-              search === "" ? "nothing, so try to look for something" : search
+            {`По вашему запросу "${
+              search === "" ? "ничего — попробуйте другой запрос" : search
             }"`}
           </Text>
         </Box>
@@ -97,7 +98,7 @@ const PageContent = () => {
             fontSize="20px"
             fontWeight="500"
           >
-            No games found.
+            Игры не найдены.
           </Text>
         )}
       </Box>
@@ -106,7 +107,7 @@ const PageContent = () => {
 };
 
 const Page = () => (
-  <Suspense fallback={<div>Loading...</div>}>
+  <Suspense fallback={<div>Загрузка...</div>}>
     <PageContent />
   </Suspense>
 );

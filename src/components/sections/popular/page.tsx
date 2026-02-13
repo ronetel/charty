@@ -77,7 +77,7 @@ export default function Popular() {
               src="../../icons/arrow-right-icon.svg"
               width='40px'
               height='40px'
-              alt="More"
+              alt="Ещё"
             />
           </Box>
         </Flex>

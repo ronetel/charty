@@ -45,18 +45,26 @@ const Page = () => {
   const [data, setData] = useState<GameDetails>();
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("currentUser");
-    if (storedUser) {
-      try {
-        const currentUser = JSON.parse(storedUser);
-        setUser(currentUser);
-        setIsLoggedIn(true);
-      } catch (e) {
+    (async () => {
+      const stored = localStorage.getItem('currentUser');
+      if (stored) {
+        try {
+          const u = JSON.parse(stored) as User;
+          try {
+            const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+            const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
+            setUser({ ...u, games: Array.isArray(cart) ? cart : (u.games || []), wishlist: Array.isArray(wishlist) ? wishlist : (u.wishlist || []) });
+          } catch (e) {
+            setUser(u);
+          }
+          setIsLoggedIn(true);
+        } catch (e) {
+          setIsLoggedIn(false);
+        }
+      } else {
         setIsLoggedIn(false);
       }
-    } else {
-      setIsLoggedIn(false);
-    }
+    })();
   }, []);
 
   useEffect(() => {
@@ -140,27 +148,63 @@ const Page = () => {
 
   const handleAddToCart = (isCart: boolean, id: number, name: string | undefined, price: string | undefined, slug: string | undefined) => {
     if (!isLoggedIn) return alert("Пожалуйста, войдите в аккаунт, чтобы добавить в корзину");
-    const userData = isCart ? user.games : user.wishlist;
-    const updateKey = isCart ? 'games' : 'wishlist';
+    (async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return alert('Необходима авторизация');
 
-    if (user) {
-      const isGameAlreadyInCart = userData.some((game) => game.id === id);
+        const userData = isCart ? user.games : user.wishlist;
+        const updateKey = isCart ? 'games' : 'wishlist';
+        const isGameAlreadyInCart = userData.some((game) => game.id === id);
 
-      if (isGameAlreadyInCart) {
-        const updatedGames = userData.filter((game) => game.id !== id);
-        const updatedUser = { ...user, [updateKey]: updatedGames };
+        if (isCart) {
+          if (isGameAlreadyInCart) {
+            const res = await fetch(`/api/user/cart?productId=${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+            if (!res.ok) throw new Error('Не удалось удалить из корзины');
+            const json = await res.json();
+            const cart = json?.cart?.items?.map((it: any) => ({ id: it.product.id, name: it.product.name, price: it.priceAtOrder, slug: it.product.rawgSlug || it.product.metadata?.slug })) || [];
+            setUser((u) => ({ ...u, games: cart } as any));
+            try {
+              const stored = localStorage.getItem('currentUser');
+              if (stored) {
+                const base = JSON.parse(stored);
+                localStorage.setItem('currentUser', JSON.stringify({ ...base, games: cart }));
+              }
+            } catch (e) {}
+          } else {
+            const res = await fetch('/api/user/cart', { method: 'POST', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ productId: id, quantity: 1 }) });
+            if (!res.ok) throw new Error('Не удалось добавить в корзину');
+            const json = await res.json();
+            const cart = json?.cart?.items?.map((it: any) => ({ id: it.product.id, name: it.product.name, price: it.priceAtOrder, slug: it.product.rawgSlug || it.product.metadata?.slug })) || [];
+            setUser((u) => ({ ...u, games: cart } as any));
+            try {
+              const stored = localStorage.getItem('currentUser');
+              if (stored) {
+                const base = JSON.parse(stored);
+                localStorage.setItem('currentUser', JSON.stringify({ ...base, games: cart }));
+              }
+            } catch (e) {}
+          }
+        } else {
+          // wishlist still local
+          if (isGameAlreadyInCart) {
+            const updatedGames = userData.filter((game) => game.id !== id);
+            const updatedUser = { ...user, [updateKey]: updatedGames };
+            setUser(updatedUser);
+            try { localStorage.setItem('currentUser', JSON.stringify(updatedUser)); localStorage.setItem('wishlist', JSON.stringify(updatedUser.wishlist)); } catch (e) {}
+          } else {
+            const updatedUser = { ...user, [updateKey]: [...userData, { id, name, price, slug }] };
+            setUser(updatedUser);
+            try { localStorage.setItem('currentUser', JSON.stringify(updatedUser)); localStorage.setItem('wishlist', JSON.stringify(updatedUser.wishlist)); } catch (e) {}
+          }
+        }
 
-        setUser(updatedUser);
-        localStorage.setItem("currentUser", JSON.stringify(updatedUser));
         setRefreshHeader(!refreshHeader);
-      } else {
-        const updatedUser = { ...user, [updateKey]: [...userData, { id, name, price, slug }] };
-
-        setUser(updatedUser);
-        localStorage.setItem("currentUser", JSON.stringify(updatedUser));
-        setRefreshHeader(!refreshHeader);
+      } catch (e) {
+        console.error('Cart update error', e);
+        alert(e instanceof Error ? e.message : 'Ошибка корзины');
       }
-    }
+    })();
   };
 
   if(loading) return <Loading />;
@@ -268,7 +312,7 @@ const Page = () => {
                   pr="15px"
                   style={{ textAlign: "justify", hyphens: "auto" }}
                 >
-                  {data?.description_raw
+                  {(data?.description_raw || "")
                     .split("###")
                     .map((p: string, index: any) => (
                       <Box as="span" key={index}>
@@ -360,7 +404,7 @@ const Page = () => {
             <FooterBtn
               onClick={() => {
                 if (data?.id && data?.name && data?.price && data?.slug) {
-                  handleAddToCart(false, data.id, data.name, data.price, data.slug);
+                  handleAddToCart(false, data.id, data.name, String(data.price), data.slug);
                 }
               }}
               pathToIcon={"/icons/medal-star-icon.svg"}
@@ -383,12 +427,12 @@ const Page = () => {
             cursor='pointer'
             onClick={() => {
               if (data?.id && data?.name && data?.price && data?.slug) {
-                handleAddToCart(true, data.id, data.name, data.price, data.slug);
+                handleAddToCart(true, data.id, data.name, String(data.price), data.slug);
               }
             }}
           >
             <Text fontSize={{base: "16px", sm: "20px"}} fontWeight="700">
-              ${data?.price}
+              {data?.price} ₽
             </Text>
             <Flex columnGap="15px" alignItems="center">
               <Text fontSize={{base: "16px", sm: "20px"}} fontWeight="600" textAlign='right'>
@@ -402,29 +446,27 @@ const Page = () => {
         <Flex mb={{base: "40px", lg: '100px'}} direction={{base: 'column', lg: 'row'}} justifyContent="space-between" rowGap='24px'>
           {}
           <Box w={{base: "100%", lg: "60%", xl: "70%"}}>
-            <Box mb="30px">
-              <RatingLinegrapth rating={data?.ratings || []} />
-            </Box>
+            
 
             <Grid gridTemplateColumns={{base: '1fr', md: 'repeat(2, 1fr)'}} alignSelf={{base: "center", md: 'start'}} justifyItems={{base: "center", md: 'start'}} textAlign={{base: "center", md: 'start'}} rowGap='10px'>
               <Box>
                 <Text mb='5px' fontWeight='600' color={COLORS.gray} fontSize='16px'>Платформа</Text>
-                {data?.platforms.map((platform, index) => (
-                  <Box key={index} as="span">{platform.platform.name}{index < data.platforms.length - 1 && ', '}</Box>
+                {(data?.platforms || []).map((platform, index) => (
+                  <Box key={index} as="span">{platform?.platform?.name}{index < ((data?.platforms?.length) || 0) - 1 && ', '}</Box>
                 ))}
               </Box>
 
               <Box>
                 <Text mb='5px' fontWeight='600' color={COLORS.gray} fontSize='16px'>Жанр</Text>
-                {data?.genres.map((genre, index) => (
-                    <Box key={index} as="span">{genre.name}{index < data.genres.length - 1 && ', '}</Box>
+                {(data?.genres || []).map((genre, index) => (
+                  <Box key={index} as="span">{genre?.name}{index < ((data?.genres?.length) || 0) - 1 && ', '}</Box>
                 ))}
               </Box>
 
               <Box>
                 <Text mb='5px' fontWeight='600' color={COLORS.gray} fontSize='16px'>Разработчики</Text>
-                {data?.developers.map((developer, index) => (
-                  <Box key={index} as="span">{developer.name}{index < data.developers.length - 1 && ', '}</Box>
+                {(data?.developers || []).map((developer, index) => (
+                  <Box key={index} as="span">{developer?.name}{index < ((data?.developers?.length) || 0) - 1 && ', '}</Box>
                 ))}
               </Box>
 
@@ -440,8 +482,8 @@ const Page = () => {
 
               <Box>
                 <Text mb='5px' fontWeight='600' color={COLORS.gray} fontSize='16px'>Издатели</Text>
-                {data?.publishers.map((publisher, index) => (
-                  <Box key={index} as="span">{publisher.name}{index < data.publishers.length - 1 && ', '} </Box>
+                {(data?.publishers || []).map((publisher, index) => (
+                  <Box key={index} as="span">{publisher?.name}{index < ((data?.publishers?.length) || 0) - 1 && ', '} </Box>
                 ))}
               </Box>
 
@@ -455,10 +497,10 @@ const Page = () => {
           {}
           <Box w={{base: "100%", lg: "calc(40% - 30px)", xl: 'calc(30% - 30px)'}} justifyContent={{base: "center", md: 'start'}}>
             <Flex flexWrap='wrap' gap='10px' justifyContent={{base: "center", md: 'start'}}>
-              {data?.stores.map((store, index) => (
-                <Link key={index} href={`https://${store.store.domain}`} target="_blank" h='44px' display='flex' alignItems='center' px='20px' bg={COLORS.darkLight} borderRadius='10px' transition={TRANSITIONS.mainTransition} _hover={{ textDecoration: "none", bg: COLORS.darkSoft, transition: TRANSITIONS.mainTransition }}>
-                  {getStoreIcon(store.store.slug)}
-                  <Text ml='10px' key={index} fontSize='16px' fontWeight='600'>{store.store.name}</Text>
+              {(data?.stores || []).map((store, index) => (
+                <Link key={index} href={`https://${store?.store?.domain || ""}`} target="_blank" h='44px' display='flex' alignItems='center' px='20px' bg={COLORS.darkLight} borderRadius='10px' transition={TRANSITIONS.mainTransition} _hover={{ textDecoration: "none", bg: COLORS.darkSoft, transition: TRANSITIONS.mainTransition }}>
+                  {getStoreIcon(store?.store?.slug || "")}
+                  <Text ml='10px' key={index} fontSize='16px' fontWeight='600'>{store?.store?.name}</Text>
                 </Link>
               ))}
             </Flex>

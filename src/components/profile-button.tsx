@@ -15,15 +15,26 @@ export const ProfileButton: React.FC<Props> = ({ className, onClickSignIn }) => 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('currentUser');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (error) {
-        console.error('Failed to parse user:', error);
+    let mounted = true;
+    const load = () => {
+      const stored = localStorage.getItem('currentUser');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (mounted) setUser(parsed);
+        } catch (e) {
+          if (mounted) setUser(null);
+        }
+      } else {
+        if (mounted) setUser(null);
       }
-    }
-    setLoading(false);
+      if (mounted) setLoading(false);
+    };
+    load();
+
+    const handleStorage = () => load();
+    window.addEventListener('storage', handleStorage);
+    return () => { mounted = false; window.removeEventListener('storage', handleStorage); };
   }, []);
 
   if (loading) {

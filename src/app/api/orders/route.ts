@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "../../../../lib/prisma";
 import { generateActivationKey } from "@/utils/generateKey";
+import { createAuditLog } from '@/lib/audit';
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,63 +29,57 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Генерируем ключи активации для каждого товара
     const activationKeys = items.map(() => generateActivationKey());
 
-    // Создаем заказ в транзакции
-    const order = await prisma.$transaction(async (tx) => {
-      // Создаем заказ
-      const newOrder = await tx.order.create({
+    const newOrder = await prisma.order.create({
+      data: {
+        userId: parseInt(userId),
+        totalAmount: parseFloat(total),
+        status: "paid",
+        paymentMethodId: paymentMethodId ? parseInt(paymentMethodId) : undefined,
+      },
+    });
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const activationKey = activationKeys[i];
+
+      await prisma.orderItem.create({
         data: {
+          orderId: newOrder.id,
           userId: parseInt(userId),
-          totalAmount: parseFloat(total),
-          status: "pending",
+          productId: parseInt(item.id),
+          quantity: 1,
+          priceAtOrder: parseFloat(item.price),
         },
       });
 
-      // Создаем элементы заказа и уменьшаем количество на складе
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const activationKey = activationKeys[i];
+      await prisma.product.update({
+        where: { id: parseInt(item.id) },
+        data: { added: { increment: 1 } },
+      });
+    }
 
-        // Создаем элемент заказа
-        await tx.orderItem.create({
-          data: {
-            orderId: newOrder.id,
-            productId: parseInt(item.id),
-            quantity: 1,
-            priceAtOrder: parseFloat(item.price),
-          },
-        });
+    try {
+      await createAuditLog({
+        userId: Number(userId),
+        action: 'create',
+        entity: 'order',
+        entityId: newOrder.id,
+        details: { total, itemsCount: items.length },
+      });
+    } catch (e) {
+      console.warn("Audit log failed:", e);
+    }
 
-        // Уменьшаем количество товара на складе
-        await tx.product.update({
-          where: { id: parseInt(item.id) },
-          data: {
-            stockQuantity: {
-              decrement: 1,
-            },
-            added: {
-              increment: 1,
-            },
-          },
-        });
-      }
-
-      return newOrder;
-    });
-
-    // Отправляем письмо с информацией о заказе
     try {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
       await fetch(`${appUrl}/api/send-email`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
-          orderId: order.id,
+          orderId: newOrder.id,
           items,
           subtotal,
           commission,
@@ -93,15 +88,15 @@ export async function POST(request: NextRequest) {
         }),
       });
     } catch (emailError) {
-      console.error("Failed to send email:", emailError);
-      // Не прерываем выполнение, если письмо не отправилось
+      console.error("Email send failed:", emailError);
     }
 
     return NextResponse.json({
       success: true,
-      orderId: order.id,
+      orderId: newOrder.id,
       activationKeys,
     });
+
   } catch (error) {
     console.error("Order creation error:", error);
     return NextResponse.json(

@@ -69,74 +69,50 @@ export default function Home() {
   }
 
   return (
-    <Box className="wrapper" h="100%">
+    <Box className="wrapper" h="10%">
       <Flex
         h={{ base: "calc(100% - 115px)", "840px": "calc(100% - 65px)" }}
-        alignItems="center"
+        alignItems="flex-start"
         flex="1 1"
+        mt={{ base: 8, md: 12, lg: 16 }} // явный отступ сверху
       >
-        <Grid
-          display="grid"
-          columnGap={{ base: "20px", md: "30px" }}
-          rowGap={{ base: "20px", md: "25px" }}
-          h="calc(100% - 60px)"
-          gridTemplateColumns={{
-            base: "repeat(3, 1fr)",
-            lg: "repeat(4, 1fr)",
-          }}
-          gridTemplateRows={{
-            base: "auto auto auto",
-            lg: "repeat(3, 1fr)",
-          }}
-          flex="1 1"
-          _last={{ alignItems: "end" }}
-        >
-          {games &&
-            games.map(
-              (
-                { id, name, background_image, platforms, price, slug },
-                index,
-              ) => (
+        <Box w="100%" display="flex" flexDirection="row" gap={{ base: "20px", md: "30px" }}>
+          
+          {games && games[0] && (
+            <Box flex="0 0 75%" maxW="80%" h={{ base: "600px", md: "700px", lg: "800px" }}>
+              <GamePreviewCard
+                key={games[0].id}
+                name={games[0].name}
+                src={games[0].background_image}
+                price={games[0].price}
+                platforms={games[0].platforms}
+                isCustom={true}
+                isFirst={true}
+                href={`/catalog/${games[0].slug}`}
+                width="100%"
+                height="100%"
+              />
+            </Box>
+          )}
+          
+          <Box flex="1" display="flex" flexDirection="column" gap="20px" h={{ base: "600px", md: "700px", lg: "800px" }}>
+            {games && games.slice(1, 4).map((game, idx) => (
+              <Box key={game.id} flex="1" minH="0">
                 <GamePreviewCard
-                  key={id}
-                  name={name}
-                  src={background_image}
-                  price={price}
-                  platforms={platforms}
+                  name={game.name}
+                  src={game.background_image}
+                  price={game.price}
+                  platforms={game.platforms}
                   isCustom={true}
-                  isFirst={index === 0 && true}
-                  href={`/catalog/${slug}`}
+                  isFirst={false}
+                  href={`/catalog/${game.slug}`}
+                  width="100%"
+                  height="100%"
                 />
-              ),
-            )}
-
-          <Flex
-            as={Link}
-            href="/catalog"
-            pt={{ base: "0", lg: "15px" }}
-            alignItems="center"
-            justifyContent={{ base: "center", lg: "flex-start" }}
-            columnGap="20px"
-            cursor="pointer"
-            gridColumn={{ base: "1 / 4", lg: "1 / 5" }}
-            transition={TRANSITIONS.mainTransition}
-            _hover={{
-              columnGap: "30px",
-              transition: TRANSITIONS.mainTransition,
-            }}
-          >
-            <Text fontSize="24px" fontWeight={700}>
-              Перейти в магазин
-            </Text>
-
-            <Image
-              src="/icons/arrow-right-icon.svg"
-              width={34}
-              height={34}
-              alt="Arrow"
-            />
-          </Flex>
-        </Grid>
+              </Box>
+            ))}
+          </Box>
+        </Box>
       </Flex>
     </Box>
   );

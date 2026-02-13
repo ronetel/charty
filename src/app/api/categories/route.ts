@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
 import { isAdminFromToken, getTokenFromHeader } from '@/lib/admin';
+import { createAuditLog } from '@/lib/audit';
+import { verifyToken } from '@/lib/jwt';
 
 export async function GET() {
   try {
@@ -29,7 +31,10 @@ export async function POST(req: Request) {
     const created = await prisma.category.create({
       data: { name, description }
     });
-
+    try {
+      const payload = verifyToken(token || '');
+      await createAuditLog({ userId: payload?.id, action: 'create', entity: 'category', entityId: created.id, details: { after: created } });
+    } catch (e) {}
     return NextResponse.json(created);
   } catch (e) {
     console.error('Category create error', e);

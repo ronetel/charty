@@ -1,7 +1,7 @@
 export interface GamePreviewCardProps {
   name: string;
   src: string;
-  price: string;
+  price: number | string;
   platforms: any[];
   width?: string;
   height?: string;
@@ -18,7 +18,7 @@ export interface GameCardHome {
   id: number;
   name: string;
   background_image: string;
-  price: string;
+  price: number | string;
   released: string | null;
   rating: number;
   slug: string;
@@ -74,13 +74,13 @@ export interface User {
   games: {
     id: number;
     name: string;
-    price: string;
+    price: number | string;
     slug: string;
   }[];
   wishlist: {
     id: number;
     name: string;
-    price: string;
+    price: number | string;
     slug: string;
   }[];
   paymentMethods?: {
@@ -97,6 +97,6 @@ export interface AddToCart {
   user: User;
   id: number;
   name: string;
-  price: string;
+  price: number | string;
   slug: string;
 }

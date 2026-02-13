@@ -21,7 +21,11 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 
   const toggleTheme = () => {
     setIsDarkMode(!isDarkMode);
-    localStorage.setItem('appTheme', isDarkMode ? 'light' : 'dark');
+    const newTheme = isDarkMode ? 'light' : 'dark';
+    localStorage.setItem('appTheme', newTheme);
+    try {
+      window.dispatchEvent(new CustomEvent('themeChange', { detail: { theme: newTheme } }));
+    } catch (e) {}
   };
 
   if (!mounted) {

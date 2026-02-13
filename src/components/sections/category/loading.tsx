@@ -28,7 +28,7 @@ export default function Loading() {
           fontSize={{ base: "28px", md: "32px", lg: "40px" }}
           mb="30px"
         >
-          Search by category
+          Поиск по категориям
         </Heading>
 
         <Flex

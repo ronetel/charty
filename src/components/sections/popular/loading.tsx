@@ -22,7 +22,7 @@ export default function Loading() {
             fontWeight={800}
             fontSize={{ base: "28px", md: "32px", lg: "40px" }}
           >
-            Popular
+            Популярные
           </Heading>
           <Box as={Link} href="/catalog" cursor="pointer">
             <Image

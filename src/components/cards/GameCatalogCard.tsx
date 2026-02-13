@@ -25,7 +25,7 @@ const GameCatalogCard = ({
 }: {
   name: string;
   src: string;
-  price: string;
+  price: number | string;
   platforms: any[];
   id: number;
   genres: any[];
@@ -111,7 +111,7 @@ const GameCatalogCard = ({
             </Flex>
 
             <Text fontSize="14px" fontWeight="600" color={COLORS.white}>
-              ${price}
+              {price} ₽
             </Text>
           </Flex>
 

@@ -1,51 +1,21 @@
 "use client";
 import React, { useEffect, useState } from "react";
+import fetchWithTiming from "@/lib/fetchWithTiming";
 import styles from "@/styles/admin.module.scss";
-import {
-  MdDeleteOutline,
-  MdModeEditOutline,
-  MdAdd,
-  MdClose,
-} from "react-icons/md";
 
-type TableName =
-  | "products"
-  | "categories"
-  | "users"
-  | "roles"
-  | "orders"
-  | "paymentMethods";
+// Import new components
+import { TableTabs } from "./tables/components/TableTabs";
+import { TableHeader } from "./tables/components/TableHeader";
+import { AlertMessages } from "./tables/components/AlertMessages";
+import { TableRows } from "./tables/components/TableRows";
+import { TablePagination } from "./tables/components/TablePagination";
+import { FormModal } from "./tables/components/FormModal";
 
-const TABLES: TableName[] = [
-  "products",
-  "categories",
-  "users",
-  "roles",
-  "orders",
-  "paymentMethods",
-];
-
-const TABLE_LABELS: Record<TableName, string> = {
-  products: "Товары",
-  categories: "Категории",
-  users: "Пользователи",
-  roles: "Роли",
-  orders: "Заказы",
-  paymentMethods: "Способы оплаты",
-};
-
-const TABLE_FIELDS: Record<TableName, string[]> = {
-  products: ["name", "description", "price", "stockQuantity"],
-  categories: ["name", "description"],
-  users: ["email", "login", "isActive"],
-  roles: ["name"],
-  orders: ["status", "totalAmount"],
-  paymentMethods: ["methodType", "maskedData", "isDefault"],
-};
-
-interface FormData {
-  [key: string]: string | number | boolean;
-}
+// Import types, constants, schemas, utils
+import { TableName, FormData, PaginationData } from "./tables/types";
+import { TABLE_LABELS } from "./tables/constants";
+import { validationSchemas } from "./tables/schemas";
+import { getTokenHeader, formatDateForInput } from "./tables/utils";
 
 export default function TablesManager() {
   const [active, setActive] = useState<TableName>("products");
@@ -56,34 +26,69 @@ export default function TablesManager() {
   const [formData, setFormData] = useState<FormData>({});
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Record<number, boolean>>({});
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Search and filter
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Сортировка
+  const [sortBy, setSortBy] = useState<string>("id");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(field);
+      setSortOrder("asc");
+    }
+    setCurrentPage(1);
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSearchQuery("");
+    setDebouncedSearch("");
+  }, [active]);
+
+  // Debounce search input to avoid rapid requests
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   useEffect(() => {
     fetchList();
-  }, [active]);
-
-  const tokenHeader = () => {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("admin_token");
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-    }
-    return headers;
-  };
+  }, [active, currentPage, debouncedSearch, pageSize, sortBy, sortOrder]);
 
   const fetchList = async () => {
     setLoading(true);
     setErrorMessage("");
     try {
-      const res = await fetch(`/api/admin/${active}`, {
-        headers: tokenHeader(),
+      let url = `/api/admin/${active}?page=${currentPage}&page_size=${pageSize}`;
+      if (debouncedSearch) {
+        url += `&search=${encodeURIComponent(debouncedSearch)}`;
+      }
+      if (sortBy) {
+        url += `&sortBy=${encodeURIComponent(sortBy)}&sortOrder=${sortOrder}`;
+      }
+
+      const res = await fetchWithTiming(url, {
+        headers: getTokenHeader(),
       });
       if (!res.ok) throw new Error("Failed to fetch");
-      const json = await res.json();
-      setData(json.results || json || []);
+      const json: PaginationData = await res.json();
+      setData(json.results || []);
+      setTotalCount(json.count || 0);
+      setTotalPages(json.total_pages || 1);
     } catch (e) {
       console.error(e);
       setErrorMessage("Ошибка при загрузке данных");
@@ -96,27 +101,45 @@ export default function TablesManager() {
     setFormData({});
     setEditingId(null);
     setIsFormOpen(false);
-    setErrorMessage("");
+    setValidationErrors({});
   };
 
   const handleOpenAddForm = () => {
     setFormData({});
     setEditingId(null);
     setIsFormOpen(true);
-    setErrorMessage("");
+    setValidationErrors({});
   };
 
   const handleOpenEditForm = (item: any) => {
-    setFormData({ ...item });
+    const processedItem = { ...item };
+    if (item.releasedDate) {
+      processedItem.releasedDate = formatDateForInput(item.releasedDate);
+    }
+    setFormData(processedItem);
     setEditingId(item.id);
     setIsFormOpen(true);
-    setErrorMessage("");
+    setValidationErrors({});
   };
 
-  const handleSubmitForm = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmitForm = async (data: FormData) => {
     setErrorMessage("");
     setSuccessMessage("");
+    setValidationErrors({});
+
+    // Валидация
+    const schema = validationSchemas[active];
+    const parseResult = schema.safeParse(data);
+
+    if (!parseResult.success) {
+      const errors: Record<string, string> = {};
+      parseResult.error.issues.forEach((issue: any) => {
+        const path = issue.path.join(".");
+        errors[path] = issue.message;
+      });
+      setValidationErrors(errors);
+      return;
+    }
 
     try {
       const method = editingId ? "PUT" : "POST";
@@ -126,8 +149,8 @@ export default function TablesManager() {
 
       const res = await fetch(url, {
         method,
-        headers: tokenHeader(),
-        body: JSON.stringify(formData),
+        headers: getTokenHeader(),
+        body: JSON.stringify(parseResult.data),
       });
 
       if (!res.ok) {
@@ -153,16 +176,16 @@ export default function TablesManager() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (item: any) => {
     if (!confirm(`Вы уверены, что хотите удалить этот элемент?`)) return;
 
     setErrorMessage("");
     setSuccessMessage("");
 
     try {
-      const res = await fetch(`/api/admin/${active}/${id}`, {
+      const res = await fetch(`/api/admin/${active}/${item.id}`, {
         method: "DELETE",
-        headers: tokenHeader(),
+        headers: getTokenHeader(),
       });
 
       if (!res.ok) {
@@ -183,310 +206,80 @@ export default function TablesManager() {
     }
   };
 
-  const renderFormField = (fieldName: string) => {
-    const value = formData[fieldName];
-
-    if (active === "users" && fieldName === "isActive") {
-      return (
-        <div key={fieldName} className={styles.form_group}>
-          <label>Активный</label>
-          <select
-            value={String(value === true || value === "true")}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                [fieldName]: e.target.value === "true",
-              })
-            }
-          >
-            <option value="true">Да</option>
-            <option value="false">Нет</option>
-          </select>
-        </div>
-      );
-    }
-
-    if (active === "paymentMethods" && fieldName === "isDefault") {
-      return (
-        <div key={fieldName} className={styles.form_group}>
-          <label>По умолчанию</label>
-          <select
-            value={String(value === true || value === "true")}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                [fieldName]: e.target.value === "true",
-              })
-            }
-          >
-            <option value="true">Да</option>
-            <option value="false">Нет</option>
-          </select>
-        </div>
-      );
-    }
-
-    if (fieldName === "description") {
-      return (
-        <div key={fieldName} className={styles.form_group}>
-          <label>{getLabelForField(fieldName)}</label>
-          <textarea
-            value={String(value || "")}
-            onChange={(e) =>
-              setFormData({ ...formData, [fieldName]: e.target.value })
-            }
-            placeholder={`Введите ${getLabelForField(fieldName).toLowerCase()}`}
-          />
-        </div>
-      );
-    }
-
-    if (
-      fieldName === "price" ||
-      fieldName === "stockQuantity" ||
-      fieldName === "totalAmount"
-    ) {
-      return (
-        <div key={fieldName} className={styles.form_group}>
-          <label>{getLabelForField(fieldName)}</label>
-          <input
-            type="number"
-            step={
-              fieldName === "price" || fieldName === "totalAmount"
-                ? "0.01"
-                : "1"
-            }
-            value={String(value || "")}
-            onChange={(e) =>
-              setFormData({ ...formData, [fieldName]: e.target.value })
-            }
-            placeholder={`Введите ${getLabelForField(fieldName).toLowerCase()}`}
-          />
-        </div>
-      );
-    }
-
-    return (
-      <div key={fieldName} className={styles.form_group}>
-        <label>{getLabelForField(fieldName)}</label>
-        <input
-          type={fieldName === "email" ? "email" : "text"}
-          value={String(value || "")}
-          onChange={(e) =>
-            setFormData({ ...formData, [fieldName]: e.target.value })
-          }
-          placeholder={`Введите ${getLabelForField(fieldName).toLowerCase()}`}
-          required
-        />
-      </div>
-    );
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
   };
 
-  const getLabelForField = (field: string): string => {
-    const labels: Record<string, string> = {
-      name: "Название",
-      description: "Описание",
-      price: "Цена",
-      stockQuantity: "Количество на складе",
-      email: "Email",
-      login: "Логин",
-      isActive: "Активный",
-      status: "Статус",
-      totalAmount: "Сумма",
-      methodType: "Тип платежа",
-      maskedData: "Скрытые данные",
-      isDefault: "По умолчанию",
-    };
-    return labels[field] || field;
-  };
-
-  const renderRowData = (row: any) => {
-    if (active === "products") {
-      return `${row.name} — ${row.price}`;
-    } else if (active === "users") {
-      return `${row.email} (${row.login || "N/A"})`;
-    } else if (active === "categories" || active === "roles") {
-      return row.name;
-    } else if (active === "orders") {
-      return `${row.status} — ${row.totalAmount}₽`;
-    } else if (active === "paymentMethods") {
-      return `${row.methodType} — ${row.maskedData}`;
-    } else {
-      return `ID: ${row.id}`;
-    }
-  };
 
   return (
     <section className={styles.tables_section}>
-      <div className={styles.table_tabs}>
-        {TABLES.map((t) => (
-          <button
-            key={t}
-            onClick={() => setActive(t)}
-            className={`${styles.table_tab} ${active === t ? styles.active : ""}`}
-          >
-            {TABLE_LABELS[t]}
-          </button>
-        ))}
-      </div>
+      <TableTabs active={active} onTabChange={setActive} />
 
       <div className={styles.table_content}>
-        {errorMessage && (
-          <div className={styles.error_message}>{errorMessage}</div>
-        )}
+        <AlertMessages 
+          errorMessage={errorMessage}
+          successMessage={successMessage}
+          validationErrors={Object.values(validationErrors)}
+        />
 
-        {successMessage && (
-          <div className={styles.success_message}>{successMessage}</div>
-        )}
+        <TableHeader
+          activeTable={active}
+          searchQuery={searchQuery}
+          pageSize={pageSize}
+          onSearchChange={setSearchQuery}
+          onAddClick={handleOpenAddForm}
+          onPageSizeChange={handlePageSizeChange}
+        />
 
-        <div className={styles.table_header}>
-          <h3>{TABLE_LABELS[active]}</h3>
-          <button
-            className={styles.submit_btn}
-            onClick={handleOpenAddForm}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              marginLeft: "auto",
-              width: "auto",
-              padding: "10px 16px",
-            }}
-          >
-            <MdAdd size={20} />
-            Добавить
-          </button>
-        </div>
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          loading={loading}
+          hasData={data.length > 0}
+          onPageChange={setCurrentPage}
+        />
 
         <div className={styles.table_wrapper}>
-          {}
           <div className={styles.table_list}>
-            {loading ? (
-              <div className={styles.table_loading}>
-                <span className={styles.loading_spinner}></span>
-                <p style={{ marginTop: "12px" }}>Загрузка данных...</p>
-              </div>
-            ) : (
-              <>
-                {data.length === 0 ? (
-                  <div className={styles.table_empty}>
-                    Записей не найдено. Создайте первый элемент, используя
-                    форму.
-                  </div>
-                ) : (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th style={{ width: "60px" }}>ID</th>
-                        <th>Данные</th>
-                        <th style={{ width: "120px", textAlign: "right" }}>
-                          Действия
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.map((row) => (
-                        <tr key={row.id}>
-                          <td>#{row.id}</td>
-                          <td>{renderRowData(row)}</td>
-                          <td>
-                            <div className={styles.table_actions}>
-                              <button
-                                className={styles.edit_btn}
-                                onClick={() => handleOpenEditForm(row)}
-                                title="Редактировать"
-                              >
-                                <MdModeEditOutline size={16} />
-                              </button>
-                              <button
-                                className={styles.delete_btn}
-                                onClick={() => handleDelete(row.id)}
-                                title="Удалить"
-                              >
-                                <MdDeleteOutline size={16} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </>
-            )}
+            <TableRows
+              activeTable={active}
+              data={data}
+              currentPage={currentPage}
+              pageSize={pageSize}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              expandedDescriptions={expandedDescriptions}
+              loading={loading}
+              onExpandDescription={(rowId) => 
+                setExpandedDescriptions(prev => ({
+                  ...prev,
+                  [rowId]: !prev[rowId]
+                }))
+              }
+              onEdit={handleOpenEditForm}
+              onDelete={handleDelete}
+              onSort={handleSort}
+            />
           </div>
-
-          {}
-          {isFormOpen && (
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                backgroundColor: "rgba(0, 0, 0, 0.8)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                zIndex: 1000,
-              }}
-            >
-              <div
-                className={styles.form_container}
-                style={{
-                  maxWidth: "500px",
-                  width: "100%",
-                  margin: "20px",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "16px",
-                  }}
-                >
-                  <h4 className={styles.form_title}>
-                    {editingId
-                      ? `Редактировать ${TABLE_LABELS[active]}`
-                      : `Создать ${TABLE_LABELS[active]}`}
-                  </h4>
-                  <button
-                    onClick={resetForm}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "#A1A1A1",
-                      cursor: "pointer",
-                      fontSize: "24px",
-                      padding: "0",
-                    }}
-                    title="Закрыть"
-                  >
-                    <MdClose />
-                  </button>
-                </div>
-
-                <form onSubmit={handleSubmitForm}>
-                  {TABLE_FIELDS[active].map((field) => renderFormField(field))}
-
-                  <div className={styles.form_actions}>
-                    <button type="submit" className={styles.submit_btn}>
-                      {editingId ? "Сохранить" : "Создать"}
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.cancel_btn}
-                      onClick={resetForm}
-                    >
-                      Отменить
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      <FormModal
+        isOpen={isFormOpen}
+        title={
+          editingId
+            ? `Редактировать ${TABLE_LABELS[active]}`
+            : `Создать ${TABLE_LABELS[active]}`
+        }
+        activeTable={active}
+        initialData={formData}
+        isLoading={loading}
+        validationErrors={validationErrors}
+        onClose={resetForm}
+        onSubmit={handleSubmitForm}
+      />
     </section>
   );
 }

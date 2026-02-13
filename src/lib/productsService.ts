@@ -3,14 +3,14 @@ import prisma from "../../lib/prisma";
 
 function mapProductToClient(p: any) {
   const metadata = p.metadata || {};
-
   return {
     id: p.id,
     name: p.name,
     background_image: p.backgroundImage || null,
     price: p.price ? String(p.price) : "0",
     slug: p.rawgSlug || String(p.id),
-    description_raw: p.description || "",
+    description: p.description || p.description_raw || "",
+    description_raw: p.description || p.description_raw || "",
     website: p.website || metadata.website || "",
     metacritic: p.metacritic || metadata.metacritic || null,
     short_screenshots: p.backgroundImage
@@ -39,9 +39,8 @@ function mapProductToClient(p: any) {
     })),
     rating: p.rating || metadata.rating || 0,
     added: p.added || metadata.added || 0,
-    released: p.releasedDate
-      ? new Date(p.releasedDate).toISOString().split("T")[0]
-      : null,
+    releasedDate: p.releasedDate || p.released || null,
+    released: p.releasedDate || p.released || null,
     stores: (metadata.stores || []).map((store: any) => ({
       store: {
         domain: store.store?.domain || store.domain || "",
@@ -77,16 +76,14 @@ export async function listProducts({
 
   const total = await prisma.product.count({ where });
 
-  // ✅ Валидные варианты сортировки (без полей из metadata)
-  const orderByMap: any = {
-    createdAt: { createdAt: sortOrder },
-    price: { price: sortOrder },
-    name: { name: sortOrder },
-    // ⚠️ added и rating недоступны для сортировки - они в metadata
-  };
-
-  // Если запрашивается недоступная сортировка, используем дефолтную
-  const orderBy = orderByMap[sortBy] || { createdAt: sortOrder };
+  // Поддержка сортировки по любому полю таблицы (в том числе releasedDate, rating, description, website, background_image)
+  const allowedFields = [
+    "id", "name", "description", "price", "releasedDate", "rating", "website", "background_image", "added", "createdAt"
+  ];
+  let orderBy: any = { createdAt: sortOrder };
+  if (sortBy && allowedFields.includes(sortBy)) {
+    orderBy = { [sortBy]: sortOrder };
+  }
 
   const products = await prisma.product.findMany({
     where,
@@ -142,9 +139,6 @@ export async function createProduct(data: any) {
     description: description_raw || data.description,
     rawgSlug: slug || data.rawgSlug,
     price: data.price ? parseFloat(data.price) : undefined,
-    stockQuantity: data.stockQuantity
-      ? parseInt(data.stockQuantity, 10)
-      : undefined,
     categoryId: data.categoryId ? parseInt(data.categoryId, 10) : undefined,
     rawgId: data.rawgId ? parseInt(data.rawgId, 10) : undefined,
     releasedDate: released ? new Date(released) : undefined,
@@ -211,10 +205,6 @@ export const updateProduct = async (id: number, data: any) => {
     description: description_raw || data.description,
     rawgSlug: slug || data.rawgSlug,
     price: data.price !== undefined ? parseFloat(data.price) : undefined,
-    stockQuantity:
-      data.stockQuantity !== undefined
-        ? parseInt(data.stockQuantity, 10)
-        : undefined,
     categoryId:
       data.categoryId !== undefined ? parseInt(data.categoryId, 10) : undefined,
     rawgId: data.rawgId !== undefined ? parseInt(data.rawgId, 10) : undefined,

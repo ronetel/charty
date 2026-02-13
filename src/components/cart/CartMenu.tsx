@@ -15,7 +15,7 @@ import {
   ModalCloseButton,
 } from "@chakra-ui/react";
 import { COLORS, TRANSITIONS } from "../../theme";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { User } from "../../interface";
 import { IoClose } from "react-icons/io5";
 import { FaArrowRightLong } from "react-icons/fa6";
@@ -42,7 +42,7 @@ const CartMenu = ({
 
   const totalSum = () => {
     let sum = 0;
-    const items = activeView === "cart" ? user.games : user.wishlist;
+    const items = activeView === "cart" ? (cartItems || user.games) : user.wishlist;
     if(items.length === 0) return sum;
 
     items.forEach((item) => {
@@ -51,30 +51,70 @@ const CartMenu = ({
     return sum.toFixed(2);
   };
 
-  const handleDelete = (id: number) => {
-    const data = activeView === "cart" ? user.games : user.wishlist;
+  const [cartItems, setCartItems] = useState<any[]>(user.games || []);
 
-    const updatedData = data.filter((game) => game.id !== id);
-    const updatedUser = activeView === "cart"
-    ? { ...user, games: updatedData }
-    : { ...user, wishlist: updatedData };
-    console.log("🚀 ~ updatedUser", updatedData);
-
-    localStorage.setItem("currentUser", JSON.stringify(updatedUser));
-    setRefreshCard(!refreshCard);
+  const handleDelete = async (id: number) => {
+    if (activeView === 'cart') {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('Unauthorized');
+        const res = await fetch(`/api/user/cart?productId=${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+        if (!res.ok) throw new Error('Failed to remove');
+        const json = await res.json();
+        const newCart = json?.cart?.items?.map((it: any) => ({ id: it.product.id, name: it.product.name, price: it.priceAtOrder, slug: it.product.rawgSlug || it.product.metadata?.slug })) || [];
+        setCartItems(newCart);
+        try {
+          const stored = localStorage.getItem('currentUser');
+          if (stored) {
+            const base = JSON.parse(stored);
+            localStorage.setItem('currentUser', JSON.stringify({ ...base, games: newCart }));
+          }
+        } catch (e) {}
+        setRefreshCard(!refreshCard);
+      } catch (e) {
+        console.error('Cart delete error', e);
+      }
+    } else {
+      const data = user.wishlist;
+      const updatedData = data.filter((game) => game.id !== id);
+      try {
+        const stored = localStorage.getItem('currentUser');
+        let base = user;
+        if (stored) {
+          try { base = JSON.parse(stored); } catch (e) { base = user; }
+        }
+        const newUser = { ...base, wishlist: updatedData };
+        localStorage.setItem('currentUser', JSON.stringify(newUser));
+      } catch (e) {}
+      setRefreshCard(!refreshCard);
+    }
   }
 
   const router = useRouter();
 
   const handleCheckout = () => {
-    if ((activeView === "cart" ? user?.games : user?.wishlist).length === 0) {
-      alert("Корзина пуста");
+    const items = activeView === 'cart' ? (cartItems || user.games) : user.wishlist;
+    if (items.length === 0) {
+      alert('Корзина пуста');
       return;
     }
-
-    localStorage.setItem('currentUser', JSON.stringify(user));
-    router.push("/checkout");
+    router.push('/checkout');
   }
+
+  useEffect(() => {
+    if (!isOpen) return;
+    (async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await fetch('/api/user/cart', { headers: { authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const json = await res.json();
+        const cart = json?.cart?.items?.map((it: any) => ({ id: it.product.id, name: it.product.name, price: it.priceAtOrder, slug: it.product.rawgSlug || it.product.metadata?.slug })) || [];
+        setCartItems(cart);
+      } catch (e) {}
+    })();
+  }, [isOpen]);
 
   return (
     <>
@@ -100,7 +140,7 @@ const CartMenu = ({
               justifyContent="space-between"
             >
               <Text fontSize="24px" fontWeight="700" color={COLORS.white}>
-                {(activeView === "cart" ? user?.games : user?.wishlist).length} {activeView === 'cart' ? 'товаров' : 'в избранном'}
+                {(activeView === 'cart' ? (cartItems?.length || 0) : (user?.wishlist?.length || 0))} {activeView === 'cart' ? 'товаров' : 'в избранном'}
               </Text>
               <ModalCloseButton />
               {}
@@ -140,12 +180,12 @@ const CartMenu = ({
                       background: COLORS.blueHover,
                     },
                   }}>
-                  {(activeView === "cart" ? user?.games : user?.wishlist).map((item) => (
+                  {(activeView === 'cart' ? (cartItems || []) : (user?.wishlist || [])).map((item) => (
                     <Flex _hover={{textDecoration: 'none'}} key={item.id} p="10px 15px" borderRadius='10px' justifyContent='space-between' alignItems='center' bg={COLORS.darkLight} columnGap='15px'>
                       <Text as={Link} href={`/catalog/${item.slug}`} _hover={{textDecoration: 'none'}} color={COLORS.gray} fontSize='md' fontWeight='600' noOfLines={1}>{item.name}</Text>
 
                       <Flex columnGap='10px' alignItems='center' w='auto'>
-                        <Text color={COLORS.gray} fontWeight='600'>${item.price}</Text>
+                        <Text color={COLORS.gray} fontWeight='600'>{item.price} ₽</Text>
                         <Center onClick={() => handleDelete(item.id)} cursor='pointer' bg={COLORS.darkSoft} w='30px' h='30px' borderRadius='50%'>
                           <IoClose size='16px' color={COLORS.white} />
                         </Center>
@@ -153,7 +193,7 @@ const CartMenu = ({
                     </Flex>
                   ))}
 
-                  {activeView === "cart" && user?.games.length === 0 ? (
+                  {activeView === 'cart' && (cartItems || []).length === 0 ? (
                     <Text textAlign='center'>Нет игр в корзине</Text>
                   ) : <></>}
 
@@ -163,8 +203,8 @@ const CartMenu = ({
                 </Stack>
 
                 <Flex p='24px' justifyContent='space-between' bg={COLORS.darkLight} alignItems='center'>
-                  <Text fontWeight='600' fontSize='md' color={COLORS.gray}>
-                    Общая сумма: ${totalSum()}
+                    <Text fontWeight='600' fontSize='md' color={COLORS.gray}>
+                    Общая сумма: {totalSum()} ₽
                   </Text>
 
                   <Flex onClick={handleCheckout} cursor='pointer' columnGap='15px' alignItems='center' fontWeight='700' fontSize='20px' transition={TRANSITIONS.mainTransition} _hover={{color: COLORS.gray}}>

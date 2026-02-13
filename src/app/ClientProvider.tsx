@@ -34,7 +34,7 @@ const ClientProvider = ({ children }: { children: React.ReactNode }) => {
 
   if (!mounted) {
     return (
-      <Suspense fallback={<div>Loading...</div>}>
+      <Suspense fallback={<div>Загрузка...</div>}>
         <ChakraProvider theme={customTheme}>
           {children}
         </ChakraProvider>
@@ -43,7 +43,7 @@ const ClientProvider = ({ children }: { children: React.ReactNode }) => {
   }
 
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<div>Загрузка...</div>}>
       <ChakraProvider theme={dynamicTheme}>
         {children}
       </ChakraProvider>

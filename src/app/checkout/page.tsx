@@ -31,23 +31,47 @@ export default function CheckoutPage() {
   const toast = useToast();
 
   React.useEffect(() => {
-    const storedUser = localStorage.getItem("currentUser");
-    if (!storedUser) {
-      router.push("/");
-      return;
-    }
-    const parsedUser = JSON.parse(storedUser);
-    setUser(parsedUser);
-    setEmail(parsedUser.email || "");
-
-    if (parsedUser.paymentMethods && parsedUser.paymentMethods.length > 0) {
-      const defaultCard = parsedUser.paymentMethods.find(
-        (card: any) => card.isDefault,
-      );
-      setPaymentMethod(
-        defaultCard?.id || parsedUser.paymentMethods[0]?.id || "",
-      );
-    }
+    (async () => {
+      const stored = localStorage.getItem('currentUser');
+      if (!stored) {
+        router.push('/');
+        return;
+      }
+      try {
+        const u = JSON.parse(stored) as User;
+        setUser(u);
+        setEmail(u.email || '');
+        if (u.paymentMethods && u.paymentMethods.length > 0) {
+          const defaultCard = u.paymentMethods.find((card: any) => card.isDefault);
+          setPaymentMethod(defaultCard?.id || u.paymentMethods[0]?.id || '');
+        }
+        // load cart from server if possible, fallback to localStorage
+        try {
+          const token = localStorage.getItem('token');
+          if (token) {
+            const res = await fetch('/api/user/cart', { headers: { authorization: `Bearer ${token}` } });
+            if (res.ok) {
+              const json = await res.json();
+              const cart = json?.cart?.items?.map((it: any) => ({ id: it.product.id, name: it.product.name, price: it.priceAtOrder, slug: it.product.rawgSlug || it.product.metadata?.slug })) || [];
+              setUser({ ...u, games: cart });
+              // persist merged user object
+              try { localStorage.setItem('currentUser', JSON.stringify({ ...u, games: cart })); } catch (e) {}
+            } else {
+              // fallback to localStorage key `cart`
+              const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+              if (Array.isArray(cart) && cart.length > 0) setUser({ ...u, games: cart });
+            }
+          } else {
+            const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+            if (Array.isArray(cart) && cart.length > 0) setUser({ ...u, games: cart });
+          }
+        } catch (e) {
+          try { const cart = JSON.parse(localStorage.getItem('cart') || '[]'); if (Array.isArray(cart) && cart.length > 0) setUser({ ...u, games: cart }); } catch (e) {}
+        }
+      } catch (e) {
+        router.push('/');
+      }
+    })();
   }, [router]);
 
   if (!user) {
@@ -120,15 +144,10 @@ export default function CheckoutPage() {
       if (useNewCard) {
         const maskedCardNumber = cardNumber.replace(/\d(?=\d{4})/g, "*");
         const cardResponse = await fetch("/api/user/payment-methods", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: user.id,
-            methodType: "card",
-            maskedData: maskedCardNumber,
-            isDefault: !(user.paymentMethods || []).length,
-          }),
-        });
+            method: "POST",
+            headers: { "Content-Type": "application/json", 'authorization': `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ methodType: "card", maskedData: maskedCardNumber, isDefault: !(user.paymentMethods || []).length }),
+          });
 
         if (!cardResponse.ok) {
           throw new Error("Не удалось сохранить карту");
@@ -162,9 +181,29 @@ export default function CheckoutPage() {
 
       const orderData = await orderResponse.json();
 
-      // Очищаем корзину пользователя
-      const updatedUser = { ...user, games: [] };
-      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+      // Очистим локальную корзину
+      try {
+        // clear server cart items
+        const token = localStorage.getItem('token');
+        if (token) {
+          for (const it of cartItems) {
+            try {
+              await fetch(`/api/user/cart?productId=${it.id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+            } catch (e) {}
+          }
+        }
+      } catch (e) {}
+
+      try {
+        const stored = localStorage.getItem('currentUser');
+        if (stored) {
+          const base = JSON.parse(stored);
+          const newUser = { ...base, games: [] };
+          localStorage.setItem('currentUser', JSON.stringify(newUser));
+        }
+        // also remove any separate cart key
+        localStorage.removeItem('cart');
+      } catch (e) {}
 
       toast({
         title: "Успех! 🎉",
@@ -200,9 +239,9 @@ export default function CheckoutPage() {
       </Text>
 
       <Flex gap={8} flexDirection={{ base: "column", lg: "row" }}>
-        {/* Левая колонка */}
+        
         <VStack flex={1} spacing={6} align="stretch">
-          {/* Товары в заказе */}
+          
           <Box bg={COLORS.darkLight} p={6} borderRadius="lg">
             <Text fontSize="lg" fontWeight="bold" mb={4}>
               Товары в заказе
@@ -221,14 +260,14 @@ export default function CheckoutPage() {
                     {item.name}
                   </Text>
                   <Text color={COLORS.gray} fontWeight="bold">
-                    ${item.price}
+                    {item.price} ₽
                   </Text>
                 </Flex>
               ))}
             </Stack>
           </Box>
 
-          {/* Контактная информация */}
+          
           <Box bg={COLORS.darkLight} p={6} borderRadius="lg">
             <Text fontSize="lg" fontWeight="bold" mb={4}>
               Контактная информация
@@ -258,7 +297,7 @@ export default function CheckoutPage() {
             </VStack>
           </Box>
 
-          {/* Способ оплаты */}
+          
           <Box bg={COLORS.darkLight} p={6} borderRadius="lg">
             <Text fontSize="lg" fontWeight="bold" mb={4}>
               Способ оплаты
@@ -364,30 +403,43 @@ export default function CheckoutPage() {
                     color={COLORS.white}
                     _hover={{ bg: "blue.600" }}
                     onClick={async () => {
-                      if (
-                        !cardNumber.trim() ||
-                        !cardHolder.trim() ||
-                        !expiryDate.trim()
-                      ) {
-                        toast({
-                          title: "Ошибка",
-                          description: "Заполните все поля карты",
-                          status: "error",
-                          duration: 5000,
-                          isClosable: true,
-                        });
+                      const num = cardNumber.trim();
+                      const holder = cardHolder.trim();
+                      const expiry = expiryDate.trim();
+
+                      if (!num || !holder || !expiry) {
+                        toast({ title: "Ошибка", description: "Заполните все поля карты", status: "error", duration: 5000, isClosable: true });
+                        return;
+                      }
+                      if (num.length !== 16) {
+                        toast({ title: "Ошибка", description: "Номер карты должен содержать 16 цифр", status: "error", duration: 5000, isClosable: true });
+                        return;
+                      }
+                      const expMatch = expiry.match(/^(\d{2})\/(\d{2})$/);
+                      if (!expMatch) {
+                        toast({ title: "Ошибка", description: "Неверный формат срока (MM/YY)", status: "error", duration: 5000, isClosable: true });
+                        return;
+                      }
+                      const month = parseInt(expMatch[1], 10);
+                      const year = parseInt(expMatch[2], 10) + 2000;
+                      if (month < 1 || month > 12) {
+                        toast({ title: "Ошибка", description: "Неверный месяц в сроке", status: "error", duration: 5000, isClosable: true });
+                        return;
+                      }
+                      const now = new Date();
+                      const expDate = new Date(year, month - 1, 1);
+                      expDate.setMonth(expDate.getMonth() + 1);
+                      if (expDate <= now) {
+                        toast({ title: "Ошибка", description: "Срок карты истёк", status: "error", duration: 5000, isClosable: true });
                         return;
                       }
 
-                      const maskedCardNumber = cardNumber.replace(
-                        /\d(?=\d{4})/g,
-                        "*",
-                      );
+                      const maskedCardNumber = num.replace(/\d(?=\d{4})/g, "*");
 
                       try {
                         const res = await fetch("/api/user/payment-methods", {
                           method: "POST",
-                          headers: { "Content-Type": "application/json" },
+                          headers: { "Content-Type": "application/json" , 'authorization': `Bearer ${localStorage.getItem('token')}` },
                           body: JSON.stringify({
                             userId: user.id,
                             methodType: "card",
@@ -406,23 +458,25 @@ export default function CheckoutPage() {
                         const clientCard = {
                           id: newCardId,
                           cardNumber: maskedCardNumber,
-                          cardHolder: cardHolder.trim(),
-                          expiryDate: expiryDate.trim(),
+                          cardHolder: holder,
+                          expiryDate: expiry,
                           isDefault: !!serverMethod.isDefault,
                         };
 
-                        const updatedUser = {
-                          ...user,
-                          paymentMethods: [
-                            ...(user.paymentMethods || []),
-                            clientCard,
-                          ],
-                        };
-                        localStorage.setItem(
-                          "currentUser",
-                          JSON.stringify(updatedUser),
-                        );
-                        setUser(updatedUser);
+                        // update local currentUser with new payment method
+                        try {
+                          const stored = localStorage.getItem('currentUser');
+                          let base = user as any;
+                          if (stored) {
+                            try { base = JSON.parse(stored); } catch (e) { base = user; }
+                          }
+                          const newPaymentMethods = [ ...(base.paymentMethods || []), clientCard ];
+                          const newUser = { ...base, paymentMethods: newPaymentMethods };
+                          localStorage.setItem('currentUser', JSON.stringify(newUser));
+                          setUser(newUser);
+                        } catch (e) {
+                          setUser({ ...user, paymentMethods: [...(user.paymentMethods || []), clientCard] });
+                        }
                         setPaymentMethod(clientCard.id);
                         setUseNewCard(false);
                         setCardNumber("");
@@ -471,7 +525,7 @@ export default function CheckoutPage() {
           </Box>
         </VStack>
 
-        {/* Правая колонка - Итого */}
+        
         <Box
           w={{ base: "100%", lg: "350px" }}
           h="fit-content"
@@ -499,14 +553,14 @@ export default function CheckoutPage() {
             <Flex justify="space-between">
               <Text color={COLORS.gray}>Товары:</Text>
               <Text color={COLORS.white} fontWeight="bold">
-                ${subtotal.toFixed(2)}
+                {subtotal.toFixed(2)} ₽
               </Text>
             </Flex>
 
             <Flex justify="space-between">
               <Text color={COLORS.gray}>Комиссия (10%):</Text>
               <Text color={COLORS.white} fontWeight="bold">
-                ${commission.toFixed(2)}
+                {commission.toFixed(2)} ₽
               </Text>
             </Flex>
           </Stack>
@@ -516,7 +570,7 @@ export default function CheckoutPage() {
               Всего:
             </Text>
             <Text fontSize="lg" fontWeight="bold" color={COLORS.blue}>
-              ${total.toFixed(2)}
+              {total.toFixed(2)} ₽
             </Text>
           </Flex>
 

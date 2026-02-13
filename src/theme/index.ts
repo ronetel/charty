@@ -114,5 +114,11 @@ export const customTheme = extendTheme({
       color: COLORS.red,
       fontWeight: 800,
     }
+    ,
+    global: {
+      'input, textarea': {
+        color: 'var(--chakra-colors-chakra-body-text)'
+      }
+    }
   }
 });

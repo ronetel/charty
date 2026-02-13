@@ -39,7 +39,7 @@ interface Props {
 export default function OrderHistory({ user }: Props) {
   const [orders, setOrders] = React.useState<Order[]>([]);
   const [loading, setLoading] = React.useState(true);
-  const [useDatabase, setUseDatabase] = React.useState(false);
+  const [useDatabase, setUseDatabase] = React.useState(true);
   const toast = useToast();
 
   React.useEffect(() => {
@@ -154,16 +154,7 @@ export default function OrderHistory({ user }: Props) {
         <Text fontSize="lg" fontWeight="bold">
           История заказов
         </Text>
-        {/* Кнопка для переключения между локальным хранилищем и базой данных */}
-        {process.env.NODE_ENV === "development" && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setUseDatabase(!useDatabase)}
-          >
-            {useDatabase ? "Использовать localStorage" : "Использовать БД"}
-          </Button>
-        )}
+        
       </Flex>
 
       <VStack spacing={4} align="stretch">
@@ -223,7 +214,7 @@ export default function OrderHistory({ user }: Props) {
                     {item.name}
                   </Text>
                   <Text color={COLORS.white} fontWeight="bold">
-                    ${parseFloat(item.price).toFixed(2)}
+                    ₽{parseFloat(item.price).toFixed(2)}
                   </Text>
                 </Flex>
               ))}
@@ -234,11 +225,11 @@ export default function OrderHistory({ user }: Props) {
             <VStack spacing={1} align="stretch">
               <Flex justify="space-between" fontSize="sm">
                 <Text color={COLORS.gray}>Товары:</Text>
-                <Text color={COLORS.white}>${order.subtotal.toFixed(2)}</Text>
+                <Text color={COLORS.white}>₽{order.subtotal.toFixed(2)}</Text>
               </Flex>
               <Flex justify="space-between" fontSize="sm">
                 <Text color={COLORS.gray}>Комиссия (10%):</Text>
-                <Text color={COLORS.white}>${order.commission.toFixed(2)}</Text>
+                <Text color={COLORS.white}>₽{order.commission.toFixed(2)}</Text>
               </Flex>
               <Flex
                 justify="space-between"
@@ -248,7 +239,7 @@ export default function OrderHistory({ user }: Props) {
               >
                 <Text color={COLORS.white}>Итого:</Text>
                 <Text color={COLORS.blue} fontSize="lg">
-                  ${order.total.toFixed(2)}
+                  ₽{order.total.toFixed(2)}
                 </Text>
               </Flex>
             </VStack>

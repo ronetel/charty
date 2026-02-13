@@ -44,7 +44,7 @@ const loading = () => {
           >
             <FaArrowLeftLong size="30px" />
             <Text fontSize="28px" fontWeight="700">
-              Store
+              Магазин
             </Text>
           </Flex>
 

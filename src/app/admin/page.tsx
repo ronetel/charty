@@ -2,6 +2,8 @@
 import React, { useEffect, useState } from "react";
 import AdminHeader from "@/components/admin/AdminHeader";
 import TablesManager from "@/components/admin/TablesManager";
+import Statistics from "@/components/admin/Statistics";
+import ReactPaginate from 'react-paginate';
 import styles from "@/styles/admin.module.scss";
 
 interface Stats {
@@ -22,6 +24,10 @@ export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [backupLoading, setBackupLoading] = useState(false);
   const [backupError, setBackupError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [touched, setTouched] = useState({ email: false, password: false });
+  const [activeTab, setActiveTab] = useState<"management" | "statistics" | "audit">("management");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -51,8 +57,39 @@ export default function AdminPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    let isValid = true;
+    const newEmailError = {
+      required: !email,
+      invalid: !isValidEmail(email) && email !== "",
+    };
+    const newPasswordError = {
+      required: !password,
+      short: password.length > 0 && password.length < 6,
+    };
+    
+    if (newEmailError.required || newEmailError.invalid) {
+      setEmailError(
+        newEmailError.required ? "Email обязателен" : "Некорректный email"
+      );
+      isValid = false;
+    }
+    
+    if (newPasswordError.required || newPasswordError.short) {
+      setPasswordError(
+        newPasswordError.required
+          ? "Пароль обязателен"
+          : "Пароль должен содержать минимум 6 символов"
+      );
+      isValid = false;
+    }
+    
+    if (!isValid) return;
+
     setLoading(true);
     setLoginError("");
+    setEmailError("");
+    setPasswordError("");
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -75,6 +112,11 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
   };
 
   const handleLogout = () => {
@@ -217,12 +259,11 @@ export default function AdminPage() {
                 <input
                   id="email"
                   type="email"
-                  required
                   style={{
                     width: "100%",
                     padding: "10px 12px",
                     backgroundColor: "#000000",
-                    border: "1px solid #3B3B3B",
+                    border: `1px solid ${emailError ? "#FF8383" : "#3B3B3B"}`,
                     borderRadius: "6px",
                     color: "#FFFFFF",
                     fontSize: "14px",
@@ -231,17 +272,35 @@ export default function AdminPage() {
                     transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
                   }}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "#83B4FF";
+                    e.currentTarget.style.borderColor = emailError ? "#FF8383" : "#83B4FF";
                     e.currentTarget.style.boxShadow =
-                      "0 0 0 3px rgba(131, 180, 255, 0.1)";
+                      emailError
+                        ? "0 0 0 3px rgba(255, 131, 131, 0.1)"
+                        : "0 0 0 3px rgba(131, 180, 255, 0.1)";
                   }}
                   onBlur={(e) => {
-                    e.currentTarget.style.borderColor = "#3B3B3B";
+                    setTouched({ ...touched, email: true });
+                    e.currentTarget.style.borderColor = emailError ? "#FF8383" : "#3B3B3B";
                     e.currentTarget.style.boxShadow = "none";
                   }}
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setEmailError("");
+                  }}
                 />
+                {touched.email && emailError && (
+                  <p
+                    style={{
+                      fontSize: "12px",
+                      color: "#FF8383",
+                      marginTop: "4px",
+                      margin: "4px 0 0 0",
+                    }}
+                  >
+                    ⚠️ {emailError}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -262,12 +321,11 @@ export default function AdminPage() {
                 <input
                   id="password"
                   type="password"
-                  required
                   style={{
                     width: "100%",
                     padding: "10px 12px",
                     backgroundColor: "#000000",
-                    border: "1px solid #3B3B3B",
+                    border: `1px solid ${passwordError ? "#FF8383" : "#3B3B3B"}`,
                     borderRadius: "6px",
                     color: "#FFFFFF",
                     fontSize: "14px",
@@ -276,18 +334,35 @@ export default function AdminPage() {
                     transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
                   }}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "#83B4FF";
+                    e.currentTarget.style.borderColor = passwordError ? "#FF8383" : "#83B4FF";
                     e.currentTarget.style.boxShadow =
-                      "0 0 0 3px rgba(131, 180, 255, 0.1)";
+                      passwordError
+                        ? "0 0 0 3px rgba(255, 131, 131, 0.1)"
+                        : "0 0 0 3px rgba(131, 180, 255, 0.1)";
                   }}
                   onBlur={(e) => {
-                    e.currentTarget.style.borderColor = "#3B3B3B";
+                    setTouched({ ...touched, password: true });
+                    e.currentTarget.style.borderColor = passwordError ? "#FF8383" : "#3B3B3B";
                     e.currentTarget.style.boxShadow = "none";
                   }}
-                  placeholder="••••••••"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setPasswordError("");
+                  }}
                 />
+                {touched.password && passwordError && (
+                  <p
+                    style={{
+                      fontSize: "12px",
+                      color: "#FF8383",
+                      marginTop: "4px",
+                      margin: "4px 0 0 0",
+                    }}
+                  >
+                    ⚠️ {passwordError}
+                  </p>
+                )}
               </div>
 
               <button
@@ -329,245 +404,379 @@ export default function AdminPage() {
 
   return (
     <div className={styles.admin_container}>
-      <AdminHeader onLogout={handleLogout} />
+      <AdminHeader onLogout={handleLogout} activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div className={styles.admin_content}>
         <div className="wrapper">
-          {/* Статистика */}
-          {stats && (
-            <div style={{ marginBottom: "32px" }}>
-              <h2
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "700",
-                  marginBottom: "20px",
-                  color: "#FFFFFF",
-                }}
-              >
-                📊 Статистика базы данных
-              </h2>
-
+          
+          {activeTab === "management" && (
+            <>
+              
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: "20px",
-                  marginBottom: "24px",
+                  backgroundColor: "#1A1A1A",
+                  border: "1px solid #262626",
+                  borderRadius: "12px",
+                  padding: "24px",
+                  marginBottom: "32px",
                 }}
               >
-                <StatCard
-                  title="Всего игр"
-                  value={stats.games}
-                  icon="🎮"
-                  color="#FF6B6B"
-                />
-                <StatCard
-                  title="Активных игр"
-                  value={stats.activeGames}
-                  icon="✅"
-                  color="#4ECDC4"
-                />
-                <StatCard
-                  title="Категорий"
-                  value={stats.categories}
-                  icon="📁"
-                  color="#45B7D1"
-                />
-                <StatCard
-                  title="Пользователей"
-                  value={stats.users}
-                  icon="👥"
-                  color="#95E1D3"
-                />
-                <StatCard
-                  title="Заказов"
-                  value={stats.orders}
-                  icon="📦"
-                  color="#F368E0"
-                />
-                <StatCard
-                  title="Выручка"
-                  value={`₽${Number(stats.revenue).toLocaleString()}`}
-                  icon="💰"
-                  color="#FFD166"
-                />
+                <h3
+                  style={{
+                    fontSize: "18px",
+                    fontWeight: "600",
+                    marginBottom: "16px",
+                    color: "#FFFFFF",
+                  }}
+                >
+                  💾 Резервное копирование и восстановление
+                </h3>
+
+                <p
+                  style={{
+                    fontSize: "14px",
+                    color: "#A1A1A1",
+                    marginBottom: "20px",
+                    lineHeight: "1.6",
+                  }}
+                >
+                  Создайте резервную копию или восстановите данные из файла бекапа.
+                  Файл содержит все таблицы: пользователи, игры, категории, заказы,
+                  платежные методы и связанные данные.
+                </p>
+
+                {backupError && (
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      backgroundColor: "rgba(255, 131, 131, 0.1)",
+                      border: "1px solid #FF8383",
+                      borderRadius: "6px",
+                      color: "#ff9999",
+                      fontSize: "14px",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    {backupError}
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "12px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    onClick={createBackup}
+                    disabled={backupLoading}
+                    style={{
+                      padding: "12px 24px",
+                      background: backupLoading
+                        ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                        : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                      color: "#FFFFFF",
+                      border: "none",
+                      borderRadius: "8px",
+                      fontSize: "15px",
+                      fontWeight: "600",
+                      cursor: backupLoading ? "not-allowed" : "pointer",
+                      transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                      opacity: backupLoading ? 0.7 : 1,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                    onMouseEnter={(e) =>
+                      !backupLoading &&
+                      (e.currentTarget.style.transform = "translateY(-2px)")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.transform = "translateY(0)")
+                    }
+                  >
+                    {backupLoading ? (
+                      <>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: "16px",
+                            height: "16px",
+                            border: "2px solid #fff",
+                            borderRightColor: "transparent",
+                            borderRadius: "50%",
+                            animation: "spin 1s linear infinite",
+                          }}
+                        ></span>
+                        Создание бекапа...
+                      </>
+                    ) : (
+                      <>💾 Создать бекап</>
+                    )}
+                  </button>
+
+                  <RestoreButton token={token} onSuccess={createBackup} />
+                </div>
+
+                <style>{`
+                  @keyframes spin {
+                    to { transform: rotate(360deg); }
+                  }
+                `}</style>
               </div>
+
+              
+              <TablesManager />
+            </>
+          )}
+
+          
+          {activeTab === 'audit' && (
+            <div style={{ backgroundColor: '#1A1A1A', border: '1px solid #262626', borderRadius: 12, padding: 24 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12, color: '#FFFFFF' }}>🧾 Журнал аудита</h3>
+              <AuditLogs />
             </div>
           )}
 
-          {/* Бекап */}
-          <div
-            style={{
-              backgroundColor: "#1A1A1A",
-              border: "1px solid #262626",
-              borderRadius: "12px",
-              padding: "24px",
-              marginBottom: "32px",
-            }}
-          >
-            <h3
-              style={{
-                fontSize: "18px",
-                fontWeight: "600",
-                marginBottom: "16px",
-                color: "#FFFFFF",
-              }}
-            >
-              💾 Резервное копирование базы данных
-            </h3>
-
-            <p
-              style={{
-                fontSize: "14px",
-                color: "#A1A1A1",
-                marginBottom: "20px",
-                lineHeight: "1.6",
-              }}
-            >
-              Создайте полную резервную копию базы данных. Файл будет содержать
-              все таблицы: пользователи, игры, категории, заказы, платежные
-              методы и связанные данные.
-            </p>
-
-            {backupError && (
-              <div
-                style={{
-                  padding: "12px 16px",
-                  backgroundColor: "rgba(255, 131, 131, 0.1)",
-                  border: "1px solid #FF8383",
-                  borderRadius: "6px",
-                  color: "#ff9999",
-                  fontSize: "14px",
-                  marginBottom: "16px",
-                }}
-              >
-                {backupError}
-              </div>
-            )}
-
-            <button
-              onClick={createBackup}
-              disabled={backupLoading}
-              style={{
-                padding: "12px 24px",
-                background: backupLoading
-                  ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-                  : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                color: "#FFFFFF",
-                border: "none",
-                borderRadius: "8px",
-                fontSize: "15px",
-                fontWeight: "600",
-                cursor: backupLoading ? "not-allowed" : "pointer",
-                transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                opacity: backupLoading ? 0.7 : 1,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-              onMouseEnter={(e) =>
-                !backupLoading &&
-                (e.currentTarget.style.transform = "translateY(-2px)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.transform = "translateY(0)")
-              }
-            >
-              {backupLoading ? (
-                <>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: "16px",
-                      height: "16px",
-                      border: "2px solid #fff",
-                      borderRightColor: "transparent",
-                      borderRadius: "50%",
-                      animation: "spin 1s linear infinite",
-                    }}
-                  ></span>
-                  Создание бекапа...
-                </>
-              ) : (
-                <>💾 Создать бекап</>
-              )}
-            </button>
-
-            <style>{`
-              @keyframes spin {
-                to { transform: rotate(360deg); }
-              }
-            `}</style>
-          </div>
-
-          {/* Менеджер таблиц */}
-          <TablesManager />
+          
+          {activeTab === "statistics" && <Statistics />}
         </div>
       </div>
     </div>
   );
 }
 
-// Компонент карточки статистики
-function StatCard({
-  title,
-  value,
-  icon,
-  color,
-}: {
-  title: string;
-  value: number | string;
-  icon: string;
-  color: string;
-}) {
-  return (
-    <div
-      style={{
-        backgroundColor: "#1A1A1A",
-        border: "1px solid #262626",
-        borderRadius: "12px",
-        padding: "20px",
-        transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-        cursor: "default",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: "12px",
-        }}
-      >
-        <span
-          style={{
-            fontSize: "28px",
-            lineHeight: "1",
-          }}
-        >
-          {icon}
-        </span>
-        <span
-          style={{
-            fontSize: "12px",
-            color: "#A1A1A1",
-            fontWeight: "500",
-          }}
-        >
-          {title}
-        </span>
-      </div>
+function AuditLogs() {
+  const [logs, setLogs] = React.useState<any[]>([]);
+  const [page, setPage] = React.useState(1);
+  const [total, setTotal] = React.useState(0);
+  const pageSize = 20;
 
-      <div
+  const load = async (p = 1) => {
+    try {
+      const res = await fetch(`/api/admin/audit?page=${p}&page_size=${pageSize}`);
+      if (!res.ok) throw new Error('Failed to load');
+      const data = await res.json();
+      setLogs(data.results || []);
+      setTotal(data.count || 0);
+      setPage(data.page || p);
+    } catch (e) {
+      console.error('Load audit logs error', e);
+    }
+  };
+
+  useEffect(() => { load(1); }, []);
+
+  const totalPages = Math.ceil(total / pageSize) || 1;
+
+  const renderDetails = (details: any, action: string) => {
+    if (!details) return '—';
+    if (action === 'create' && details.after) {
+      const after = details.after;
+      return (
+        <div>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Added:</div>
+          <ul style={{ margin: 0, paddingLeft: 16 }}>
+            {Object.keys(after).slice(0, 10).map((k) => (
+              <li key={k} style={{ color: '#CCCCCC' }}>{k}: {String((after as any)[k])}</li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
+    if (action === 'delete' && details.before) {
+      const before = details.before;
+      return (
+        <div>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Deleted:</div>
+          <ul style={{ margin: 0, paddingLeft: 16 }}>
+            {Object.keys(before).slice(0, 10).map((k) => (
+              <li key={k} style={{ color: '#CCCCCC' }}>{k}: {String((before as any)[k])}</li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
+    if (details.diff) {
+      const entries = Object.entries(details.diff as Record<string, any>);
+      if (entries.length === 0) return 'No changes detected';
+      return (
+        <div>
+          <ul style={{ margin: 0, paddingLeft: 16 }}>
+            {entries.map(([k, v]: any) => (
+              <li key={k} style={{ color: '#CCCCCC' }}>
+                <strong style={{ color: '#FFFFFF' }}>{k}</strong>: {String(v.from)} → {String(v.to)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
+    return <div style={{ color: '#CCCCCC' }}>{JSON.stringify(details)}</div>;
+  };
+
+  return (
+    <div>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ textAlign: 'left', color: '#A1A1A1' }}>
+            <th style={{ padding: 8 }}>Дата</th>
+            <th style={{ padding: 8 }}>Пользователь</th>
+            <th style={{ padding: 8 }}>Действие</th>
+            <th style={{ padding: 8 }}>Сущность</th>
+            <th style={{ padding: 8 }}>Детали</th>
+          </tr>
+        </thead>
+        <tbody>
+          {logs.map((l) => (
+            <tr key={l.id} style={{ borderTop: '1px solid #2a2a2a' }}>
+              <td style={{ padding: 8, color: '#CCCCCC' }}>{new Date(l.createdAt).toLocaleString()}</td>
+              <td style={{ padding: 8, color: '#CCCCCC' }}>{l.user ? (l.user.email || l.user.login) : '—'}</td>
+              <td style={{ padding: 8, color: '#CCCCCC' }}>{l.action}</td>
+              <td style={{ padding: 8, color: '#CCCCCC' }}>{l.entity}{l.entityId ? ` #${l.entityId}` : ''}</td>
+              <td style={{ padding: 8, color: '#CCCCCC' }}>{renderDetails(l.details, l.action)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button disabled={page <= 1} onClick={() => { load(page - 1); }} style={{ padding: '6px 10px' }}>‹ Prev</button>
+        <div style={{ color: '#CCCCCC' }}>Страница {page} из {totalPages}</div>
+        <button disabled={page >= totalPages} onClick={() => { load(page + 1); }} style={{ padding: '6px 10px' }}>Next ›</button>
+      </div>
+    </div>
+  );
+}
+
+function RestoreButton({
+  token,
+  onSuccess,
+}: {
+  token: string | null;
+  onSuccess: () => void;
+}): React.JSX.Element {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.currentTarget.files?.[0];
+    if (!file) return;
+
+    if (!file.name.includes("backup")) {
+      setError("Пожалуйста, выберите файл бекапа");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/admin/restore", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Ошибка восстановления");
+      }
+
+      alert(
+        "✅ Данные успешно восстановлены! Страница перезагрузится через 3 секунды."
+      );
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Ошибка восстановления данных"
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        type="file"
+        accept=".json"
+        onChange={handleRestore}
+        disabled={loading}
         style={{
-          fontSize: "32px",
-          fontWeight: "700",
+          display: "none",
+        }}
+        id="restore-input"
+      />
+      <label
+        htmlFor="restore-input"
+        style={{
+          padding: "12px 24px",
+          background: loading
+            ? "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"
+            : "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
           color: "#FFFFFF",
-          lineHeight: "1.2",
+          border: "none",
+          borderRadius: "8px",
+          fontSize: "15px",
+          fontWeight: "600",
+          cursor: loading ? "not-allowed" : "pointer",
+          transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+          opacity: loading ? 0.7 : 1,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "8px",
+        }}
+        onMouseEnter={(e) => {
+          if (!loading) {
+            e.currentTarget.style.transform = "translateY(-2px)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "translateY(0)";
         }}
       >
-        {value}
-      </div>
+        {loading ? (
+          <>
+            <span
+              style={{
+                display: "inline-block",
+                width: "16px",
+                height: "16px",
+                border: "2px solid #fff",
+                borderRightColor: "transparent",
+                borderRadius: "50%",
+                animation: "spin 1s linear infinite",
+              }}
+            ></span>
+            Восстановление...
+          </>
+        ) : (
+          <>📂 Восстановить из файла</>
+        )}
+      </label>
+      {error && (
+        <p
+          style={{
+            color: "#FF8383",
+            fontSize: "12px",
+            marginTop: "8px",
+          }}
+        >
+          ⚠️ {error}
+        </p>
+      )}
     </div>
   );
 }

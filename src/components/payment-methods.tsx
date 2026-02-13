@@ -16,26 +16,61 @@ export default function PaymentMethods({ user, setUser }: Props) {
   const [cardNumber, setCardNumber] = React.useState('');
   const [cardHolder, setCardHolder] = React.useState('');
   const [expiryDate, setExpiryDate] = React.useState('');
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [editHolder, setEditHolder] = React.useState('');
+  const [editExpiry, setEditExpiry] = React.useState('');
   const toast = useToast();
 
   const handleAddCard = async () => {
-    if (!cardNumber.trim() || !cardHolder.trim() || !expiryDate.trim()) {
-      toast({
-        title: 'Ошибка',
-        description: 'Заполните все поля',
-        status: 'error',
-        duration: 5,
-        isClosable: true,
-      });
+    // basic validation
+    const num = cardNumber.trim();
+    const holder = cardHolder.trim();
+    const expiry = expiryDate.trim();
+
+    if (!num || !holder || !expiry) {
+      toast({ title: 'Ошибка', description: 'Заполните все поля', status: 'error', duration: 5000, isClosable: true });
       return;
     }
 
-    const maskedCardNumber = cardNumber.replace(/\d(?=\d{4})/g, '*');
+    if (num.length !== 16) {
+      toast({ title: 'Ошибка', description: 'Номер карты должен содержать 16 цифр', status: 'error', duration: 5000, isClosable: true });
+      return;
+    }
+
+    // Валидация имени владельца карты: строго Имя Фамилия (Ivan Ivanov)
+    if (!/^([A-Za-zА-Яа-яЁё\-]+\s+[A-Za-zА-Яа-яЁё\-]+)$/.test(holder)) {
+      toast({ title: 'Ошибка', description: 'Введите корректное имя держателя (например: Ivan Ivanov)', status: 'error', duration: 5000, isClosable: true });
+      return;
+    }
+
+    // expiry MM/YY
+    const expMatch = expiry.match(/^(\d{2})\/(\d{2})$/);
+    if (!expMatch) {
+      toast({ title: 'Ошибка', description: 'Неверный формат срока (MM/YY)', status: 'error', duration: 5000, isClosable: true });
+      return;
+    }
+    const month = parseInt(expMatch[1], 10);
+    const year = parseInt(expMatch[2], 10) + 2000;
+    if (month < 1 || month > 12) {
+      toast({ title: 'Ошибка', description: 'Неверный месяц в сроке', status: 'error', duration: 5000, isClosable: true });
+      return;
+    }
+    const now = new Date();
+    const expDate = new Date(year, month - 1, 1);
+    // set to end of month
+    expDate.setMonth(expDate.getMonth() + 1);
+    if (expDate <= now) {
+      toast({ title: 'Ошибка', description: 'Срок карты истёк', status: 'error', duration: 5000, isClosable: true });
+      return;
+    }
+    
+
+    const maskedCardNumber = num.replace(/\d(?=\d{4})/g, '*');
 
     try {
       const res = await fetch('/api/user/payment-methods', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'authorization': `Bearer ${localStorage.getItem('token')}` },
         body: JSON.stringify({ userId: user.id, methodType: 'card', maskedData: maskedCardNumber, isDefault: !(user.paymentMethods || []).length }),
       });
 
@@ -51,13 +86,18 @@ export default function PaymentMethods({ user, setUser }: Props) {
         isDefault: !!serverMethod.isDefault,
       };
 
-      const updatedUser = {
-        ...user,
-        paymentMethods: [...(user.paymentMethods || []), clientCard],
-      };
-
-      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-      setUser(updatedUser);
+      // Обновим локального пользователя
+      try {
+        const stored = localStorage.getItem('currentUser');
+        let base = user;
+        if (stored) {
+          try { base = JSON.parse(stored); } catch (e) { base = user; }
+        }
+        const newPaymentMethods = [ ...(base.paymentMethods || []), clientCard ];
+        const newUser = { ...base, paymentMethods: newPaymentMethods };
+        localStorage.setItem('currentUser', JSON.stringify(newUser));
+        setUser(newUser);
+      } catch (e) {}
 
       setCardNumber('');
       setCardHolder('');
@@ -73,21 +113,21 @@ export default function PaymentMethods({ user, setUser }: Props) {
 
   const handleDeleteCard = async (cardId: string) => {
     try {
-      const res = await fetch(`/api/user/payment-methods?id=${encodeURIComponent(cardId)}`, { method: 'DELETE' });
+      const res = await fetch(`/api/user/payment-methods?id=${encodeURIComponent(cardId)}`, { method: 'DELETE', headers: { 'authorization': `Bearer ${localStorage.getItem('token')}` } });
       if (!res.ok) throw new Error('Server error');
 
-      const updatedPaymentMethods = user.paymentMethods?.filter(card => card.id !== cardId) || [];
-
-      if (updatedPaymentMethods.length > 0) {
-        const wasDefault = user.paymentMethods?.find(card => card.id === cardId)?.isDefault;
-        if (wasDefault) {
-          updatedPaymentMethods[0].isDefault = true;
+      // Обновим локального пользователя
+      try {
+        const stored = localStorage.getItem('currentUser');
+        let base = user;
+        if (stored) {
+          try { base = JSON.parse(stored); } catch (e) { base = user; }
         }
-      }
-
-      const updatedUser = { ...user, paymentMethods: updatedPaymentMethods };
-      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-      setUser(updatedUser);
+        const newPaymentMethods = (base.paymentMethods || []).filter((m: any) => m.id !== cardId);
+        const newUser = { ...base, paymentMethods: newPaymentMethods };
+        localStorage.setItem('currentUser', JSON.stringify(newUser));
+        setUser(newUser);
+      } catch (e) {}
 
       toast({ title: 'Успех', description: 'Карта удалена', status: 'success', duration: 5, isClosable: true });
     } catch (e) {
@@ -100,15 +140,23 @@ export default function PaymentMethods({ user, setUser }: Props) {
     try {
       const res = await fetch('/api/user/payment-methods', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'authorization': `Bearer ${localStorage.getItem('token')}` },
         body: JSON.stringify({ id: cardId, userId: user.id, isDefault: true }),
       });
       if (!res.ok) throw new Error('Server error');
 
-      const updatedPaymentMethods = user.paymentMethods?.map(card => ({ ...card, isDefault: card.id === cardId })) || [];
-      const updatedUser = { ...user, paymentMethods: updatedPaymentMethods };
-      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-      setUser(updatedUser);
+      // Обновим локального пользователя
+      try {
+        const stored = localStorage.getItem('currentUser');
+        let base = user;
+        if (stored) {
+          try { base = JSON.parse(stored); } catch (e) { base = user; }
+        }
+        const newPaymentMethods = (base.paymentMethods || []).map((m: any) => ({ ...m, isDefault: m.id === cardId }));
+        const newUser = { ...base, paymentMethods: newPaymentMethods };
+        localStorage.setItem('currentUser', JSON.stringify(newUser));
+        setUser(newUser);
+      } catch (e) {}
 
       toast({ title: 'Успех', description: 'Способ оплаты установлен по умолчанию', status: 'success', duration: 5, isClosable: true });
     } catch (e) {
@@ -128,60 +176,119 @@ export default function PaymentMethods({ user, setUser }: Props) {
           </Text>
         </VStack>
       ) : (
-        <VStack spacing={3} mb={6}>
-          {user.paymentMethods.map((card) => (
-            <Flex
-              key={card.id}
-              p={4}
-              bg={COLORS.dark}
-              borderRadius='md'
-              justify='space-between'
-              align='center'
-              borderLeftWidth={4}
-              borderLeftColor={card.isDefault ? COLORS.blue : COLORS.darkSoft}
-            >
-              <VStack align='flex-start' spacing={1}>
-                <Text color={COLORS.white} fontWeight='bold'>
-                  {card.cardNumber}
-                </Text>
-                <Text fontSize='sm' color={COLORS.gray}>
-                  {card.cardHolder}
-                </Text>
-                <Text fontSize='sm' color={COLORS.gray}>
-                  {card.expiryDate}
-                </Text>
-              </VStack>
+        <VStack spacing={6} mb={6} align='start'>
+          {user.paymentMethods.map((card) => {
+            const c: any = card;
+            const rawNumber = String(c.cardNumber || c.maskedData || c.masked_data || '');
+            const formatted = rawNumber
+              .replace(/(.{4})/g, '$1 ')
+              .trim() || '•••• •••• •••• ••••';
+            const holder = c.cardHolder || c.cardholder || c.name || '';
+            const expiry = c.expiryDate || c.expiry || '';
+            return (
+              <Flex
+                key={card.id}
+                w='100%'
+                p={8}
+                bg={COLORS.dark}
+                borderRadius='lg'
+                align='center'
+                boxShadow='sm'
+                gap={6}
+                alignSelf='flex-start'
+              >
+                <Box flex='1' mr={4}>
+                  <Text color={COLORS.white} fontWeight='700' fontSize='lg' letterSpacing='1px'>
+                    {formatted}
+                  </Text>
+                  <Flex gap={4} mt={2} align='center' flexWrap='wrap'>
+                    {!editingId || editingId !== String(card.id) ? (
+                      <>
+                        <Text fontSize='sm' color={COLORS.gray}>{holder || 'Ivan Ivanov'}</Text>
+                        <Text fontSize='sm' color={COLORS.gray}>{expiry ? `• ${expiry}` : ''}</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Input
+                          value={editHolder}
+                          onChange={(e) => setEditHolder(e.target.value)}
+                          size='sm'
+                          placeholder='Ivan Ivanov'
+                          bg={COLORS.dark}
+                          color={COLORS.white}
+                          borderColor={COLORS.darkSoft}
+                        />
+                        <Input
+                          value={editExpiry}
+                          onChange={(e) => setEditExpiry(e.target.value)}
+                          size='sm'
+                          placeholder='MM/YY'
+                          bg={COLORS.dark}
+                          color={COLORS.white}
+                          borderColor={COLORS.darkSoft}
+                        />
+                      </>
+                    )}
+                  </Flex>
+                </Box>
 
-              <Flex gap={2}>
-                {card.isDefault && (
-                  <Badge colorScheme='blue' fontSize='xs'>
-                    По умолчанию
-                  </Badge>
-                )}
+                <Flex gap={4} align='center' ml='auto'>
+                  {editingId === String(card.id) ? (
+                    <>
+                      <Button size='sm' bg={COLORS.blue} color={COLORS.white} onClick={async () => {
+                        // validate
+                        const h = editHolder.trim();
+                        const e = editExpiry.trim();
+                        if (!h || !/^([A-Za-zА-Яа-яЁё\-]+\s+[A-Za-zА-Яа-яЁё\-]+)$/.test(h)) {
+                          toast({ title: 'Ошибка', description: 'Введите корректное имя держателя (Имя Фамилия)', status: 'error', duration: 4000, isClosable: true });
+                          return;
+                        }
+                        if (!/^(\d{2})\/(\d{2})$/.test(e)) {
+                          toast({ title: 'Ошибка', description: 'Неверный формат срока (MM/YY)', status: 'error', duration: 4000, isClosable: true });
+                          return;
+                        }
+                        try {
+                          const res = await fetch('/api/user/payment-methods', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'authorization': `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ id: card.id, userId: user.id, cardHolder: h, expiryDate: e }) });
+                          if (!res.ok) throw new Error('Server error');
+                          const data = await res.json();
+                          const updated = data.method;
+                          // update local
+                          try {
+                            const stored = localStorage.getItem('currentUser');
+                            let base = user;
+                            if (stored) {
+                              try { base = JSON.parse(stored); } catch (e) { base = user; }
+                            }
+                            const newPaymentMethods = (base.paymentMethods || []).map((m: any) => m.id === updated.id ? { ...m, cardHolder: updated.cardHolder, expiryDate: updated.expiryDate } : m);
+                            const newUser = { ...base, paymentMethods: newPaymentMethods };
+                            localStorage.setItem('currentUser', JSON.stringify(newUser));
+                            setUser(newUser);
+                          } catch (e) {}
+                          setEditingId(null);
+                          toast({ title: 'Успех', description: 'Карта обновлена', status: 'success', duration: 3000, isClosable: true });
+                        } catch (err) {
+                          console.error('Update card error', err);
+                          toast({ title: 'Ошибка', description: 'Не удалось обновить карту', status: 'error', duration: 3000, isClosable: true });
+                        }
+                      }}>Сохранить</Button>
+                      <Button size='sm' variant='ghost' onClick={() => setEditingId(null)}>Отмена</Button>
+                    </>
+                  ) : (
+                    <>
+                      {card.isDefault ? (
+                        <Badge bg={COLORS.blue} color={COLORS.white} fontSize='xs' px={2} py={1} borderRadius='md'>По умолчанию</Badge>
+                      ) : (
+                        <Button size='sm' variant='outline' onClick={() => handleSetDefault(card.id)}>Сделать по умолчанию</Button>
+                      )}
 
-                <Button
-                  size='sm'
-                  bg={COLORS.darkSoft}
-                  color={COLORS.gray}
-                  _hover={{ bg: COLORS.dark }}
-                  onClick={() => handleSetDefault(card.id)}
-                  isDisabled={card.isDefault}
-                >
-                  Использовать
-                </Button>
-
-                <Button
-                  size='sm'
-                  bg='red.500'
-                  color={COLORS.white}
-                  _hover={{ bg: 'red.600' }}
-                  onClick={() => handleDeleteCard(card.id)}
-                >
-                  Удалить
-                </Button>
+                      <Button size='sm' onClick={() => { const c2: any = card; setEditingId(String(card.id)); setEditHolder(c2.cardHolder || c2.cardholder || ''); setEditExpiry(c2.expiryDate || c2.expiry || ''); }}>Изменить</Button>
+                      <Button size='sm' colorScheme='red' onClick={() => handleDeleteCard(card.id)}>Удалить</Button>
+                    </>
+                  )}
+                </Flex>
               </Flex>
-            </Flex>
-          ))}
+            );
+          })}
         </VStack>
       )}
 
@@ -220,7 +327,7 @@ export default function PaymentMethods({ user, setUser }: Props) {
             <Input
               value={cardHolder}
               onChange={(e) => setCardHolder(e.target.value)}
-              placeholder='John Doe'
+              placeholder='Ivan Ivanov'
               bg={COLORS.dark}
               color={COLORS.white}
               borderColor={COLORS.darkSoft}

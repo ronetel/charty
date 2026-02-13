@@ -71,7 +71,7 @@ const GamePreviewCard = ({ name, src, price, platforms, width = '434px', height 
         </Box>
 
         <Text display={{base: 'none', md: 'block'}} color={COLORS.white} fontWeight={isFirst ? "700" : {base: '600', md: '700'}} transition={TRANSITIONS.mainTransition} zIndex="1" >
-          ${price}
+          {price} ₽
         </Text>
       </Flex>
     </Link>

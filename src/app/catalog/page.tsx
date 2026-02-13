@@ -132,42 +132,82 @@ const Catalog = () => {
   }, [initialLoad]);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("currentUser");
-    if (storedUser) {
-      try {
-        const currentUser = JSON.parse(storedUser);
-        setUser(currentUser);
-        setIsLoggedIn(true);
-      } catch (e) {
+    (async () => {
+      const stored = localStorage.getItem('currentUser');
+      if (stored) {
+        try {
+          const u = JSON.parse(stored) as User;
+          try {
+            const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+            const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
+            setUser({ ...u, games: Array.isArray(cart) ? cart : (u.games || []), wishlist: Array.isArray(wishlist) ? wishlist : (u.wishlist || []) });
+          } catch (e) {
+            setUser(u);
+          }
+          setIsLoggedIn(true);
+        } catch (e) {
+          setIsLoggedIn(false);
+        }
+      } else {
         setIsLoggedIn(false);
       }
-    } else {
-      setIsLoggedIn(false);
-    }
+    })();
   }, []);
 
-  const handleAddToCart = (id: number, name: string, price: string, slug: string) => {
-    if (!isLoggedIn) return alert("Please sign in to add or remove from cart");
+  // sync server cart when logged in
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await fetch('/api/user/cart', { headers: { authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const json = await res.json();
+        const cart = json?.cart?.items?.map((it: any) => ({ id: it.product.id, name: it.product.name, price: it.priceAtOrder, slug: it.product.rawgSlug || it.product.metadata?.slug })) || [];
+        setUser((u) => ({ ...u, games: cart } as any));
+        try {
+          const stored = localStorage.getItem('currentUser');
+          if (stored) {
+            const base = JSON.parse(stored);
+            localStorage.setItem('currentUser', JSON.stringify({ ...base, games: cart }));
+          }
+        } catch (e) {}
+      } catch (e) {}
+    })();
+  }, [isLoggedIn]);
 
-    if (user) {
+  const handleAddToCart = async (id: number, name: string, price: string, slug: string) => {
+    if (!isLoggedIn) return alert("Пожалуйста, войдите, чтобы добавить или удалить из корзины");
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return alert('Необходима авторизация');
+
       const isGameAlreadyInCart = user.games.some((game) => game.id === id);
-
       if (isGameAlreadyInCart) {
-
-        const updatedGames = user.games.filter((game) => game.id !== id);
-        const updatedUser = { ...user, games: updatedGames };
-
-        setUser(updatedUser);
-        localStorage.setItem("currentUser", JSON.stringify(updatedUser));
-        setRefreshHeader(!refreshHeader);
+        // remove
+        const res = await fetch(`/api/user/cart?productId=${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+        if (!res.ok) throw new Error('Не удалось удалить из корзины');
+        const json = await res.json();
+        const cart = json?.cart?.items?.map((it: any) => ({ id: it.product.id, name: it.product.name, price: it.priceAtOrder, slug: it.product.rawgSlug || it.product.metadata?.slug })) || [];
+        setUser((u) => ({ ...u, games: cart } as any));
+        try {
+          const stored = localStorage.getItem('currentUser');
+          if (stored) {
+            const base = JSON.parse(stored);
+            localStorage.setItem('currentUser', JSON.stringify({ ...base, games: cart }));
+          }
+        } catch (e) {}
       } else {
-
-        const updatedUser = { ...user, games: [...user.games, { id, name, price, slug }] };
-
-        setUser(updatedUser);
-        localStorage.setItem("currentUser", JSON.stringify(updatedUser));
-        setRefreshHeader(!refreshHeader);
+        const res = await fetch('/api/user/cart', { method: 'POST', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ productId: id, quantity: 1 }) });
+        if (!res.ok) throw new Error('Не удалось добавить в корзину');
+        const json = await res.json();
+        const cart = json?.cart?.items?.map((it: any) => ({ id: it.product.id, name: it.product.name, price: it.priceAtOrder, slug: it.product.rawgSlug || it.product.metadata?.slug })) || [];
+        setUser((u) => ({ ...u, games: cart } as any));
       }
+      setRefreshHeader(!refreshHeader);
+    } catch (e) {
+      console.error('Cart update error', e);
+      alert(e instanceof Error ? e.message : 'Ошибка корзины');
     }
   };
 

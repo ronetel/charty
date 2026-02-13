@@ -1,6 +1,8 @@
 
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../lib/prisma';
+import { createAuditLog } from '@/lib/audit';
+import { verifyToken } from '@/lib/jwt';
 
 const TEST_GAMES = [
   { name: 'The Witcher 3: Wild Hunt', slug: 'the-witcher-3', description: 'Open-world RPG masterpiece with incredible storytelling', image: 'https://images.rawg.io/media/games/511/511316.jpg', price: 39.99 },
@@ -59,8 +61,6 @@ export async function POST(req: Request) {
           backgroundImage: game.image,
           releasedDate: new Date(2023 + Math.floor(i / 5), Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1),
           price: game.price,
-          digitalKey: Math.random().toString(36).substring(2, 15).toUpperCase(),
-          stockQuantity: Math.floor(Math.random() * 50) + 10,
           isActive: true,
         },
       });
@@ -81,6 +81,10 @@ export async function POST(req: Request) {
       console.log(`✅ Added game ${addedCount}/${TEST_GAMES.length}: ${game.name}`);
     }
 
+    try {
+      // Try to get admin id from environment/tokenless context - leave undefined
+      await createAuditLog({ action: 'populate', entity: 'product_bulk', details: { addedCount, genresCount: genres.length } });
+    } catch (e) {}
     return NextResponse.json({
       success: true,
       message: `Successfully added ${addedCount} games to database`,

@@ -16,26 +16,35 @@ export default function ProfilePage() {
   const router = useRouter();
 
   React.useEffect(() => {
-    const storedUser = localStorage.getItem('currentUser');
-    const storedTheme = localStorage.getItem('appTheme') as 'light' | 'dark' | null;
+    (async () => {
+      const token = localStorage.getItem('token');
+      const storedTheme = localStorage.getItem('appTheme') as 'light' | 'dark' | null;
 
-    if (!storedUser) {
-      router.push('/');
-      return;
-    }
-
-    try {
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-      if (storedTheme) {
-        setTheme(storedTheme);
+      if (!token) {
+        router.push('/');
+        return;
       }
-    } catch (error) {
-      console.error('Failed to parse user:', error);
-      router.push('/');
-    } finally {
-      setLoading(false);
-    }
+
+      try {
+        const res = await fetch('/api/user/profile', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!res.ok) {
+          router.push('/');
+          return;
+        }
+
+        const data = await res.json();
+        setUser(data.user);
+        if (storedTheme) setTheme(storedTheme);
+      } catch (error) {
+        console.error('Failed to fetch profile:', error);
+        router.push('/');
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [router]);
 
   const handleThemeChange = (newTheme: 'light' | 'dark') => {

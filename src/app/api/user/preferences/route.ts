@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../lib/prisma';
+import { createAuditLog } from '@/lib/audit';
 
 export async function GET(req: Request) {
   try {
@@ -43,6 +44,10 @@ export async function PUT(req: Request) {
       update: { theme },
       create: { userId, theme, dateFormat: 'dd.MM.yyyy', pageSize: 10 }
     });
+    try {
+      const before = null; // we don't store previous easily here; could fetch but keep minimal
+      await createAuditLog({ userId, action: 'update', entity: 'user_preferences', entityId: userId, details: { after: updated } });
+    } catch (e) {}
 
     return NextResponse.json(updated);
   } catch (e) {
